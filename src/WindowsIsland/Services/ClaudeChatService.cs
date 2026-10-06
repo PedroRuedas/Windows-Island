@@ -2,15 +2,30 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace WindowsIsland.Services;
+
+/// <summary>A file sent along with a question: a screenshot, or something dropped on the island.</summary>
+public sealed record ChatAttachment(string Path, bool IsImage)
+{
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp" };
+
+    public string Name => System.IO.Path.GetFileName(Path);
+
+    /// <summary>What to call it in the chat ("Tela: Chrome"); the file name when null.</summary>
+    public string? Label { get; init; }
+
+    public static ChatAttachment FromPath(string path) => new(path, ImageExtensions.Contains(System.IO.Path.GetExtension(path)) && File.Exists(path));
+}
 
 public sealed class ChatMessage
 {
     public required bool FromUser { get; init; }
     public string Text { get; set; } = "";
     public bool IsError { get; set; }
+    public IReadOnlyList<ChatAttachment> Attachments { get; init; } = [];
 }
 
 /// <summary>
@@ -25,7 +40,10 @@ public sealed class ClaudeChatService : IDisposable
         "Responda em português do Brasil, curto e direto: poucas frases ou uma lista curta. Evite tabelas, títulos e " +
         "blocos longos de código, a não ser que o usuário peça. Use no máximo **negrito** e `código` como formatação. " +
         "Nesta janela você não consegue pedir permissão: se uma tarefa exigir editar arquivos ou rodar comandos, " +
-        "explique o que faria e sugira abrir o Claude Code para executar.";
+        "explique o que faria e sugira abrir o Claude Code para executar. Quando houver imagem anexada, ela é a tela " +
+        "ou um arquivo que o usuário quer que você veja.";
+
+    private const int MaxImageSide = 1600;
 
     private readonly Dispatcher _dispatcher;
     private readonly List<ChatMessage> _messages = new();
@@ -49,13 +67,15 @@ public sealed class ClaudeChatService : IDisposable
     /// <summary>A reply finished (text of the answer). Raised on the UI thread.</summary>
     public event Action<string>? Answered;
 
-    public void Send(string prompt)
+    public void Send(string prompt, IReadOnlyList<ChatAttachment> attachments)
     {
         prompt = prompt.Trim();
-        if (prompt.Length == 0 || IsRunning)
+        if ((prompt.Length == 0 && attachments.Count == 0) || IsRunning)
             return;
+        if (prompt.Length == 0)
+            prompt = attachments.Any(a => a.IsImage) ? "O que você vê aqui?" : "Dê uma olhada nesse arquivo.";
 
-        _messages.Add(new ChatMessage { FromUser = true, Text = prompt });
+        _messages.Add(new ChatMessage { FromUser = true, Text = prompt, Attachments = attachments.ToList() });
         var reply = new ChatMessage { FromUser = false };
         _messages.Add(reply);
         HasUnread = false;
@@ -64,6 +84,18 @@ public sealed class ClaudeChatService : IDisposable
         if (claude is null)
         {
             Fail(reply, "Não encontrei o Claude Code neste computador. Instale a extensão do Claude Code no VS Code ou o CLI (claude.ai/code) e tente de novo.");
+            return;
+        }
+
+        string input;
+        try
+        {
+            input = BuildInput(prompt, attachments);
+        }
+        catch (Exception ex)
+        {
+            App.Log(ex);
+            Fail(reply, $"Não consegui ler o anexo: {ex.Message}");
             return;
         }
 
@@ -79,7 +111,8 @@ public sealed class ClaudeChatService : IDisposable
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
-        foreach (var arg in new[] { "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" })
+        // stream-json in as well as out: the question can carry images (screenshots).
+        foreach (var arg in new[] { "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages" })
             start.ArgumentList.Add(arg);
         // The island's own questions shouldn't show up as sessions in the island (the hooks would report them).
         start.ArgumentList.Add("--settings");
@@ -111,7 +144,42 @@ public sealed class ClaudeChatService : IDisposable
         _process = process;
         Status = "Pensando…";
         RaiseChanged();
-        _ = RunAsync(process, prompt, reply);
+        _ = RunAsync(process, input, reply);
+    }
+
+    /// <summary>One stream-json user message: the images, then the text (other files are named by path for Read).</summary>
+    private static string BuildInput(string prompt, IReadOnlyList<ChatAttachment> attachments)
+    {
+        var content = new List<object>();
+        foreach (var image in attachments.Where(a => a.IsImage))
+            content.Add(new { type = "image", source = new { type = "base64", media_type = "image/png", data = Convert.ToBase64String(EncodeImage(image.Path)) } });
+
+        var text = new StringBuilder(prompt);
+        var files = attachments.Where(a => !a.IsImage).ToList();
+        if (files.Count > 0)
+        {
+            text.Append("\n\nArquivos anexados (leia com a ferramenta Read se precisar):");
+            foreach (var file in files)
+                text.Append("\n- ").Append(file.Path);
+        }
+        content.Add(new { type = "text", text = text.ToString() });
+
+        return JsonSerializer.Serialize(new { type = "user", message = new { role = "user", content } }) + "\n";
+    }
+
+    /// <summary>PNG, scaled down so a 4K screenshot doesn't cost a fortune in tokens.</summary>
+    private static byte[] EncodeImage(string path)
+    {
+        var decoder = BitmapDecoder.Create(new Uri(path), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        BitmapSource frame = decoder.Frames[0];
+        double scale = Math.Min(1, (double)MaxImageSide / Math.Max(frame.PixelWidth, frame.PixelHeight));
+        if (scale < 1)
+            frame = new TransformedBitmap(frame, new System.Windows.Media.ScaleTransform(scale, scale));
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(frame));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
     }
 
     /// <summary>Stops the answer in progress.</summary>
@@ -142,7 +210,7 @@ public sealed class ClaudeChatService : IDisposable
 
     public void Dispose() => Cancel();
 
-    private async Task RunAsync(Process process, string prompt, ChatMessage reply)
+    private async Task RunAsync(Process process, string input, ChatMessage reply)
     {
         var errors = new StringBuilder();
         string? resultText = null;
@@ -150,7 +218,7 @@ public sealed class ClaudeChatService : IDisposable
         var denied = new List<string>();
         try
         {
-            await process.StandardInput.WriteAsync(prompt);
+            await process.StandardInput.WriteAsync(input);
             process.StandardInput.Close();
 
             var stderr = Task.Run(async () =>

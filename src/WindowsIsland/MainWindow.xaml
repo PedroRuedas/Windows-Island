@@ -186,6 +186,38 @@
             </Setter>
         </Style>
 
+        <!-- Small round glyph button inside the ask field (screenshot). -->
+        <Style x:Key="FieldButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#D9FFFFFF" />
+            <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="15" RenderTransformOrigin="0.5,0.5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#26FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.88" ScaleY="0.88" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Bare text box: the rounded field around it is drawn by its parent. -->
         <Style x:Key="AskTextBox" TargetType="TextBox">
             <Setter Property="Foreground" Value="White" />
@@ -232,7 +264,8 @@
         <Border x:Name="Island" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,8,0,0"
                 Width="140" Height="34" CornerRadius="17" Background="Black"
                 MouseEnter="Island_MouseEnter" MouseLeave="Island_MouseLeave"
-                MouseLeftButtonUp="Island_MouseLeftButtonUp" MouseWheel="Island_MouseWheel">
+                MouseLeftButtonUp="Island_MouseLeftButtonUp" MouseWheel="Island_MouseWheel"
+                AllowDrop="True" DragEnter="Island_DragEnter" DragOver="Island_DragOver" DragLeave="Island_DragLeave" Drop="Island_Drop">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32" Color="Black" RenderingBias="Performance" />
             </Border.Effect>
@@ -566,12 +599,18 @@
                             <StackPanel x:Name="AskMessages" />
                         </ScrollViewer>
 
+                        <!-- What goes with the next question: screenshots and files (chips built in code). -->
+                        <WrapPanel x:Name="AskAttachments" Margin="0,12,0,0" Visibility="Collapsed" />
+
                         <Border Margin="0,12,0,0" CornerRadius="19" Background="#1C1C1E" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="14,4,4,4">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <Button Grid.Column="1" Style="{StaticResource FieldButton}" Content="&#xE722;" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                                        Click="AskScreenshot_Click" ToolTip="Anexar um print da janela em que você estava" />
                                 <Grid VerticalAlignment="Center" Cursor="IBeam">
                                     <TextBlock x:Name="AskPlaceholder" Text="Pergunte ou peça algo…" Foreground="{StaticResource FaintText}" FontSize="13"
                                                VerticalAlignment="Center" Margin="2,0,0,0" IsHitTestVisible="False" />
@@ -579,12 +618,25 @@
                                              PreviewMouseLeftButtonDown="AskInput_PreviewMouseLeftButtonDown"
                                              PreviewKeyDown="AskInput_PreviewKeyDown" TextChanged="AskInput_TextChanged" />
                                 </Grid>
-                                <Button x:Name="AskSendButton" Grid.Column="1" Style="{StaticResource SendButton}" Width="30" Height="30" Margin="8,0,0,0"
+                                <Button x:Name="AskSendButton" Grid.Column="2" Style="{StaticResource SendButton}" Width="30" Height="30" Margin="4,0,0,0"
                                         VerticalAlignment="Bottom" Click="AskSend_Click" ToolTip="Enviar (Enter)">
                                     <TextBlock x:Name="AskSendGlyph" FontFamily="{StaticResource IconFont}" Text="&#xE74A;" FontSize="13" Foreground="White" />
                                 </Button>
                             </Grid>
                         </Border>
+                    </StackPanel>
+                </Grid>
+
+                <!-- SHELF: files dropped on the island, ready to be dragged somewhere else -->
+                <Grid x:Name="ShelfView" Width="400" Opacity="0" IsHitTestVisible="False">
+                    <StackPanel Margin="22,18,22,12">
+                        <Grid>
+                            <TextBlock Text="Prateleira" Foreground="White" FontSize="15.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" VerticalAlignment="Center" />
+                            <Button x:Name="ShelfClearButton" Style="{StaticResource TextButton}" Content="Limpar" HorizontalAlignment="Right" Click="ShelfClear_Click" />
+                        </Grid>
+                        <TextBlock x:Name="ShelfHint" Margin="0,6,0,0" Foreground="{StaticResource FaintText}" FontSize="12" TextWrapping="Wrap" />
+                        <!-- Tiles built in code: drag one out to use it, double-click to open. -->
+                        <WrapPanel x:Name="ShelfItems" Margin="-4,8,-4,0" />
                     </StackPanel>
                 </Grid>
 

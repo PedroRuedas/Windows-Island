@@ -16,6 +16,8 @@ A Dynamic Island do Mac/iPhone, só que para Windows. Uma pílula preta no topo 
 | **Tela cheia** | A ilha se esconde em jogos, vídeos em tela cheia e apresentações |
 | **Claude Code** | Sessões por projeto ao vivo ("Editando Menu.tsx", "Executando: npm test", "Aguardando você"), **uso diário e semanal** (tokens e respostas de hoje, dos últimos 7 dias e das últimas 5h, com gráfico por dia), alerta quando ele precisa de permissão e quando **termina**, com o começo da resposta |
 | **Pergunte ao Claude** | Uma caixa de conversa com o Claude dentro da ilha (aba 💬 ou **Ctrl+Alt+Espaço** de qualquer lugar). A resposta chega em tempo real, a conversa continua entre perguntas e, se você fechar a ilha, ela avisa quando o Claude responder |
+| **Perguntar sobre a tela** | O botão 📷 na caixa de pergunta anexa um print da janela em que você estava ("o que significa esse erro?", "resume esse e-mail") |
+| **Prateleira** | Arraste arquivos até a ilha: ela se abre e guarda tudo numa prateleira. Depois é só arrastá-los para outro app, abrir com duplo clique ou perguntar ao Claude sobre eles |
 | **Buraco negro na bandeja** | Ícone de buraco negro nos ícones ocultos da barra de tarefas (as "setinhas"): um clique e a ilha é sugada girando para dentro de si mesma e some; outro clique e ela volta. Botão direito: mostrar/ocultar, iniciar com o Windows, sair |
 | **Personalização** | Engrenagem ⚙️ na barra de abas: borda em degradê (presets como Apple Intelligence, Aurora e Pôr do sol, ou duas cores à sua escolha), espessura, degradê em movimento, brilho, relógio em repouso e iniciar com o Windows |
 
@@ -132,6 +134,20 @@ Como funciona: a ilha roda o Claude Code sem interface (`claude -p --output-form
 
 Ele pode ler arquivos e pesquisar na web. Para tarefas que editam arquivos ou rodam comandos, ele explica o que faria e sugere abrir o Claude Code, porque a ilha não tem como pedir sua permissão.
 
+### Perguntar sobre a tela e sobre arquivos
+
+- **📷 Print:** na caixa de pergunta, o botão de câmera tira um print da janela em que você estava antes de abrir a ilha. O print aparece como anexo e vai junto com a próxima pergunta. Se você mandar sem texto, o Claude descreve o que vê. A imagem é reduzida para no máximo 1600 px antes do envio.
+- **Arquivos:** arraste arquivos para a ilha com a página do Claude aberta, ou use o 💬 de um item da prateleira, e eles viram anexos. Imagens vão como imagem; outros arquivos vão pelo caminho, e o Claude os lê com a ferramenta Read.
+- Os prints ficam em `%LOCALAPPDATA%\WindowsIsland\attachments` e são apagados depois de um dia.
+
+## Prateleira
+
+Como os apps de "notch" do Mac: **arraste arquivos ou pastas até a ilha** e ela se abre na página Prateleira para guardá-los.
+
+- **Arraste um item para fora** e solte em qualquer app (Explorador, WhatsApp, e-mail…).
+- **Duplo clique** abre o arquivo. **✕** tira da prateleira, e **💬** manda o arquivo para o Claude.
+- Guarda até 12 itens, do mais recente para o mais antigo. Nada é copiado: a prateleira só lembra o caminho, em `%LOCALAPPDATA%\WindowsIsland\shelf.json`, e esquece arquivos que foram apagados ou movidos.
+
 ## Conectando o Claude Code
 
 O consumo de tokens é lido sozinho dos históricos locais (`~/.claude/projects`). Para o status ao vivo das sessões, adicione estes hooks em `~/.claude/settings.json`. Eles mandam cada evento para a ilha em segundo plano (`async`), sem atrasar o Claude, e não fazem nada se a ilha estiver fechada:
@@ -226,6 +242,7 @@ src/WindowsIsland/
 ├── VideoPipWindow.xaml(.cs)  Vídeo fixado: janelinha arrastável com ímã nas bordas, redimensionável, controles no hover
 ├── Core/
 │   ├── IslandController.cs   Fila de atividades por prioridade + expiração + mídia
+│   ├── Shelf.cs              Prateleira: arquivos soltos na ilha, persistidos, com ícones e miniaturas
 │   ├── IslandActivity.cs     Modelo de uma atividade
 │   ├── Spring.cs             Física de mola (o "quique" da animação)
 │   └── Icons.cs              Nomes de ícone → glifos Segoe Fluent Icons
@@ -236,6 +253,7 @@ src/WindowsIsland/
 │   ├── TrayIcon.cs             Ícone do buraco negro na área de notificação
 │   ├── ClaudeService.cs        Sessões do Claude Code (hooks) + tokens e títulos (históricos locais)
 │   ├── ClaudeChatService.cs    "Pergunte ao Claude": roda `claude -p` com streaming e mantém a conversa (--resume)
+│   ├── ScreenCapture.cs        Print da janela em que você estava (PrintWindow) para anexar à pergunta
 │   ├── NotificationService.cs  Espelha as notificações do Windows (UserNotificationListener) + histórico
 │   ├── PackageRegistration.cs  Registra o pacote esparso que dá identidade ao exe
 │   ├── BatteryService.cs     GetSystemPowerStatus

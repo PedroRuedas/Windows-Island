@@ -20,11 +20,12 @@ namespace WindowsIsland;
 
 public partial class MainWindow : Window
 {
-    private enum ViewKind { Idle, IdleExpanded, Compact, MediaExpanded, ActivityExpanded, ClaudeExpanded, NotificationsExpanded, SettingsExpanded, AskExpanded }
+    private enum ViewKind { Idle, IdleExpanded, Compact, MediaExpanded, ActivityExpanded, ClaudeExpanded, NotificationsExpanded, SettingsExpanded, AskExpanded, ShelfExpanded }
 
     private const string SettingsKey = "settings";
     private const string ClockKey = "clock";
     private const string AskKey = "ask";
+    private const string ShelfKey = "shelf";
     private const int AskHotkeyId = 0x4953;
 
     /// <summary>
@@ -50,6 +51,10 @@ public partial class MainWindow : Window
     private IntPtr _previousForeground;     // Where focus goes back to after asking.
     private string? _askSignature;
     private string _hotkeyLabel = "";
+    private readonly List<ChatAttachment> _askAttachments = new();  // Goes with the next question.
+    private readonly Shelf _shelf = Shelf.Load();
+    private string? _shelfSignature;
+    private bool _dragging;                 // Files are being dragged over the island.
     private readonly IslandSettings _settings = IslandSettings.Load();
     private TrayIcon? _tray;
     private bool _swallowing;
@@ -113,6 +118,7 @@ public partial class MainWindow : Window
             [ViewKind.NotificationsExpanded] = NotificationsView,
             [ViewKind.SettingsExpanded] = SettingsView,
             [ViewKind.AskExpanded] = AskView,
+            [ViewKind.ShelfExpanded] = ShelfView,
         };
         foreach (var view in _views.Values)
         {
@@ -133,6 +139,7 @@ public partial class MainWindow : Window
         _notifications.Changed += Refresh;
         _claude.Changed += Refresh;
         _chat.Changed += Refresh;
+        _shelf.Changed += Refresh;
         _chat.Answered += OnChatAnswered;
         // Clicking anywhere else ends typing: the island goes back to never taking focus.
         Deactivated += (_, _) =>
@@ -325,6 +332,9 @@ public partial class MainWindow : Window
         // keeps them company. While Claude is answering, the ask page is live (compact pill, bubble).
         if (_hoverExpanded && pages.Count == 0)
             pages.Add(new(ClockKey, ViewKind.IdleExpanded, Icons.Resolve("clock"), null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
+        // The shelf shows up once it holds something, or while files are being dragged over the island.
+        if (_hoverExpanded && (_shelf.Items.Count > 0 || _dragging))
+            pages.Add(new(ShelfKey, ViewKind.ShelfExpanded, Icons.Resolve("folder"), null, Color.FromRgb(0x64, 0xD2, 0xFF), false, -1));
         if (_hoverExpanded || _chat.IsRunning)
             pages.Add(new(AskKey, ViewKind.AskExpanded, Icons.Resolve("chat"), null, ClaudeService.Orange, _chat.IsRunning, _chat.IsRunning ? 60 : -1));
         if (_hoverExpanded)
@@ -667,10 +677,293 @@ public partial class MainWindow : Window
 
     private void SendAsk()
     {
-        if (_chat.IsRunning || string.IsNullOrWhiteSpace(AskInput.Text))
+        if (_chat.IsRunning || (string.IsNullOrWhiteSpace(AskInput.Text) && _askAttachments.Count == 0))
             return;
-        _chat.Send(AskInput.Text);
+        _chat.Send(AskInput.Text, _askAttachments.ToList());
         AskInput.Clear();
+        _askAttachments.Clear();
+        UpdateAttachmentChips();
+    }
+
+    /// <summary>📷: attaches a screenshot of the window you were using before coming to the island.</summary>
+    private void AskScreenshot_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        var island = new WindowInteropHelper(this).Handle;
+        var target = _keyboard ? _previousForeground : NativeMethods.GetForegroundWindow();
+        if (target == island)
+            target = IntPtr.Zero;
+        if (ScreenCapture.Capture(target) is { } shot)
+        {
+            _askAttachments.Add(new ChatAttachment(shot.Path, IsImage: true) { Label = shot.Label });
+            UpdateAttachmentChips();
+        }
+        EnableKeyboard();
+    }
+
+    private void AddAttachments(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+            if (!_askAttachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
+                _askAttachments.Add(ChatAttachment.FromPath(path));
+        UpdateAttachmentChips();
+    }
+
+    /// <summary>Chips above the field: a thumbnail or icon, the name, and ✕ to take it back out.</summary>
+    private void UpdateAttachmentChips()
+    {
+        AskAttachments.Children.Clear();
+        foreach (var attachment in _askAttachments.ToList())
+        {
+            var remove = new Button { Style = (Style)FindResource("FieldButton"), Content = "", FontSize = 9, Width = 20, Height = 20, Margin = new Thickness(4, 0, 0, 0), ToolTip = "Remover" };
+            remove.Click += (_, e) =>
+            {
+                e.Handled = true;
+                _askAttachments.Remove(attachment);
+                UpdateAttachmentChips();
+            };
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Background = new SolidColorBrush(Color.FromRgb(0x2C, 0x2C, 0x2E)),
+                Padding = new Thickness(4, 4, 4, 4),
+                Margin = new Thickness(0, 0, 6, 6),
+                ToolTip = attachment.Path,
+                Child = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Children =
+                    {
+                        new Border
+                        {
+                            Width = 26,
+                            Height = 26,
+                            CornerRadius = new CornerRadius(6),
+                            Background = Shelf.Thumbnail(attachment.Path) is { } thumb ? new ImageBrush(thumb) { Stretch = Stretch.UniformToFill } : Brushes.Transparent,
+                        },
+                        new TextBlock
+                        {
+                            Text = attachment.Label ?? attachment.Name,
+                            Foreground = Brushes.White,
+                            FontSize = 12,
+                            MaxWidth = 200,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            Margin = new Thickness(8, 0, 0, 0),
+                            VerticalAlignment = VerticalAlignment.Center,
+                        },
+                        remove,
+                    },
+                },
+            };
+            AskAttachments.Children.Add(chip);
+        }
+        AskAttachments.Visibility = _askAttachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ResizeToCurrentView();
+    }
+
+    // ── Shelf ──
+
+    private void FillShelf()
+    {
+        _shelf.Prune();
+        var items = _shelf.Items;
+        ShelfHint.Text = items.Count == 0
+            ? "Solte aqui os arquivos que você quer guardar por um momento. Depois é só arrastá-los para onde quiser."
+            : "Arraste para usar • duplo clique abre • 💬 pergunta ao Claude sobre o arquivo";
+        ShelfClearButton.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        string signature = string.Join("|", items);
+        if (signature == _shelfSignature)
+            return;
+        _shelfSignature = signature;
+        ShelfItems.Children.Clear();
+        foreach (var path in items)
+            ShelfItems.Children.Add(BuildShelfTile(path));
+    }
+
+    private FrameworkElement BuildShelfTile(string path)
+    {
+        string name = System.IO.Path.GetFileName(path.TrimEnd('\\'));
+        var icon = Shelf.Thumbnail(path);
+        bool picture = icon is System.Windows.Media.Imaging.BitmapImage;
+
+        var remove = new Button { Style = (Style)FindResource("FieldButton"), Content = "", FontSize = 9, Width = 22, Height = 22, ToolTip = "Tirar da prateleira", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Hidden };
+        remove.Click += (_, e) =>
+        {
+            e.Handled = true;
+            _shelf.Remove(path);
+        };
+        var ask = new Button { Style = (Style)FindResource("FieldButton"), Content = "", FontSize = 11, Width = 22, Height = 22, ToolTip = "Perguntar ao Claude sobre isto", HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Hidden };
+        ask.Click += (_, e) =>
+        {
+            e.Handled = true;
+            AddAttachments([path]);
+            SelectPage(AskKey);
+            EnableKeyboard();
+        };
+
+        var tile = new Border
+        {
+            Width = 84,
+            Height = 92,
+            Margin = new Thickness(4),
+            CornerRadius = new CornerRadius(12),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            ToolTip = path,
+            Child = new Grid
+            {
+                Children =
+                {
+                    new StackPanel
+                    {
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Children =
+                        {
+                            new Border
+                            {
+                                Width = picture ? 56 : 40,
+                                Height = picture ? 42 : 40,
+                                CornerRadius = new CornerRadius(picture ? 6 : 0),
+                                Background = icon is null ? Brushes.Transparent : new ImageBrush(icon) { Stretch = picture ? Stretch.UniformToFill : Stretch.Uniform },
+                            },
+                            new TextBlock
+                            {
+                                Text = name,
+                                Foreground = Brushes.White,
+                                FontSize = 11,
+                                TextAlignment = TextAlignment.Center,
+                                TextWrapping = TextWrapping.Wrap,
+                                TextTrimming = TextTrimming.CharacterEllipsis,
+                                MaxHeight = 30,
+                                Margin = new Thickness(6, 6, 6, 0),
+                            },
+                        },
+                    },
+                    ask,
+                    remove,
+                },
+            },
+        };
+
+        var hover = new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+        tile.MouseEnter += (_, _) =>
+        {
+            tile.Background = hover;
+            remove.Visibility = ask.Visibility = Visibility.Visible;
+        };
+        tile.MouseLeave += (_, _) =>
+        {
+            tile.Background = Brushes.Transparent;
+            remove.Visibility = ask.Visibility = Visibility.Hidden;
+        };
+
+        // Drag it out to any app (Explorer, WhatsApp, an e-mail…); double-click opens it.
+        Point? pressedAt = null;
+        tile.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true;
+            if (e.ClickCount == 2)
+            {
+                OpenUrl(path);
+                return;
+            }
+            pressedAt = e.GetPosition(tile);
+        };
+        tile.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            pressedAt = null;
+        };
+        tile.MouseMove += (_, e) =>
+        {
+            if (pressedAt is not { } start || e.LeftButton != MouseButtonState.Pressed)
+                return;
+            var delta = e.GetPosition(tile) - start;
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+                return;
+            pressedAt = null;
+            var data = new DataObject(DataFormats.FileDrop, new[] { path });
+            try
+            {
+                DragDrop.DoDragDrop(tile, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
+            }
+            catch (Exception ex)
+            {
+                App.Log(ex);
+            }
+        };
+        return tile;
+    }
+
+    private void ShelfClear_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        _shelf.Clear();
+    }
+
+    // ── Dropping files on the island ──
+
+    private static string[]? DroppedFiles(DragEventArgs e) =>
+        e.Data.GetDataPresent(DataFormats.FileDrop) ? e.Data.GetData(DataFormats.FileDrop) as string[] : null;
+
+    /// <summary>Like the notch apps on the Mac: drag files over the island and it opens to take them.</summary>
+    private void Island_DragEnter(object sender, DragEventArgs e)
+    {
+        if (DroppedFiles(e) is null)
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+        _leaveDelay.Stop();
+        _hoverDelay.Stop();
+        if (!_dragging)
+        {
+            _dragging = true;
+            // Over an open ask page the files become attachments; anywhere else they go on the shelf.
+            if (!(_hoverExpanded && _shownPage?.Key == AskKey))
+                _selectedKey = ShelfKey;
+            _hoverExpanded = true;
+            Refresh();
+        }
+    }
+
+    private void Island_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = DroppedFiles(e) is null ? DragDropEffects.None : DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    private void Island_DragLeave(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        // DragLeave also fires when moving between children: only end once the cursor really left.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (IsCursorOverIsland())
+                return;
+            _dragging = false;
+            _leaveDelay.Start();
+        }, DispatcherPriority.Background);
+    }
+
+    private void Island_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        _dragging = false;
+        if (DroppedFiles(e) is not { Length: > 0 } files)
+            return;
+        if (_shownPage?.Key == AskKey)
+        {
+            AddAttachments(files);
+            Refresh();
+            return;
+        }
+        _shelf.Add(files);
+        SelectPage(ShelfKey);
     }
 
     /// <summary>When the answer lands while you're elsewhere, the island tells you (click it to read).</summary>
@@ -720,15 +1013,26 @@ public partial class MainWindow : Window
             bool last = i == messages.Count - 1;
             if (message.FromUser)
             {
+                var bubble = new StackPanel();
+                // Screenshots show as a small preview; other files by name.
+                foreach (var attachment in message.Attachments)
+                {
+                    if (attachment.IsImage && Shelf.Thumbnail(attachment.Path) is { } preview)
+                        bubble.Children.Add(new Border { Height = 90, CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 0, 0, 6), Background = new ImageBrush(preview) { Stretch = Stretch.UniformToFill } });
+                    else
+                        bubble.Children.Add(new TextBlock { Text = "📎 " + (attachment.Label ?? attachment.Name), Foreground = (Brush)FindResource("DimText"), FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 0, 4) });
+                }
+                bubble.Children.Add(new TextBlock { Text = message.Text, Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap });
                 AskMessages.Children.Add(new Border
                 {
                     HorizontalAlignment = HorizontalAlignment.Right,
                     MaxWidth = 300,
+                    MinWidth = message.Attachments.Any(a => a.IsImage) ? 180 : 0,
                     Margin = new Thickness(40, i == 0 ? 0 : 12, 0, 0),
                     Padding = new Thickness(12, 7, 12, 7),
                     CornerRadius = new CornerRadius(15),
                     Background = new SolidColorBrush(Color.FromRgb(0x2C, 0x2C, 0x2E)),
-                    Child = new TextBlock { Text = message.Text, Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap },
+                    Child = bubble,
                 });
                 continue;
             }
@@ -856,6 +1160,9 @@ public partial class MainWindow : Window
             case ViewKind.AskExpanded:
                 FillAsk();
                 _chat.HasUnread = false;
+                break;
+            case ViewKind.ShelfExpanded:
+                FillShelf();
                 break;
             case ViewKind.NotificationsExpanded:
                 FillNotifications();
@@ -1331,7 +1638,7 @@ public partial class MainWindow : Window
                 Opacity = restOpacity,
                 Cursor = Cursors.Hand,
                 Child = content,
-                ToolTip = page.Key switch { "media" => "Música", "claude" => "Claude Code", "notifications" => "Notificações", AskKey => "Perguntar ao Claude", SettingsKey => "Personalizar", ClockKey => "Relógio", _ => page.Activity?.Title },
+                ToolTip = page.Key switch { "media" => "Música", "claude" => "Claude Code", "notifications" => "Notificações", AskKey => "Perguntar ao Claude", ShelfKey => "Prateleira", SettingsKey => "Personalizar", ClockKey => "Relógio", _ => page.Activity?.Title },
             };
             tab.MouseEnter += (_, _) => tab.Opacity = 1;
             tab.MouseLeave += (_, _) => tab.Opacity = restOpacity;
@@ -1377,6 +1684,7 @@ public partial class MainWindow : Window
             ViewKind.NotificationsExpanded => (400.0, MeasureHeight(NotificationsView), 36.0),
             ViewKind.SettingsExpanded => (400.0, MeasureHeight(SettingsView), 36.0),
             ViewKind.AskExpanded => (400.0, MeasureHeight(AskView), 36.0),
+            ViewKind.ShelfExpanded => (400.0, MeasureHeight(ShelfView), 36.0),
             _ => (400.0, MeasureHeight(ActivityView), 34.0),
         };
         if (_pagerVisible)
