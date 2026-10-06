@@ -15,6 +15,7 @@ A Dynamic Island do Mac/iPhone, só que para Windows. Uma pílula preta no topo 
 | **API de integração** | Notificações e atividades ao vivo (downloads, timers, builds…) enviadas por qualquer programa |
 | **Tela cheia** | A ilha se esconde em jogos, vídeos em tela cheia e apresentações |
 | **Claude Code** | Sessões por projeto ao vivo ("Editando Menu.tsx", "Executando: npm test", "Aguardando você"), **uso diário e semanal** (tokens e respostas de hoje, dos últimos 7 dias e das últimas 5h, com gráfico por dia), alerta quando ele precisa de permissão e quando **termina**, com o começo da resposta |
+| **Buraco negro na bandeja** | Ícone de buraco negro nos ícones ocultos da barra de tarefas (as "setinhas"): um clique e a ilha é sugada girando para dentro de si mesma e some; outro clique e ela volta. Botão direito: mostrar/ocultar, iniciar com o Windows, sair |
 | **Personalização** | Engrenagem ⚙️ na barra de abas: borda em degradê (presets como Apple Intelligence, Aurora e Pôr do sol, ou duas cores à sua escolha), espessura, degradê em movimento, brilho, relógio em repouso e iniciar com o Windows |
 
 ### Páginas: trocando entre apps
@@ -181,6 +182,7 @@ src/WindowsIsland/
 │   ├── MediaService.cs       Windows.Media.Control (GSMTC): mídia de qualquer app
 │   ├── VolumeService.cs      Core Audio via NAudio
 │   ├── YouTubeResolver.cs      Descobre qual vídeo do YouTube o navegador está tocando
+│   ├── TrayIcon.cs             Ícone do buraco negro na área de notificação
 │   ├── ClaudeService.cs        Sessões do Claude Code (hooks) + tokens e títulos (históricos locais)
 │   ├── NotificationService.cs  Espelha as notificações do Windows (UserNotificationListener) + histórico
 │   ├── PackageRegistration.cs  Registra o pacote esparso que dá identidade ao exe

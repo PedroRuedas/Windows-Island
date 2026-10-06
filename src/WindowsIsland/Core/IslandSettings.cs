@@ -39,6 +39,9 @@ public sealed class IslandSettings
     public bool Glow { get; set; } = true;
     public bool ShowIdleClock { get; set; } = true;
 
+    /// <summary>Swallowed by the black hole (tray icon): the island stays hidden, even across restarts.</summary>
+    public bool Hidden { get; set; }
+
     /// <summary>The gradient stops for the current choice; empty = classic hairline.</summary>
     public Color[] BorderColors()
     {

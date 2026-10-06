@@ -5,6 +5,11 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
+    <!-- Only for NotifyIcon (the tray icon); WPF has none. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Resources\blackhole.ico</ApplicationIcon>
+    <!-- WFO0003 wants WinForms' SetHighDpiMode instead of the manifest; DPI here belongs to WPF, which reads the manifest. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -16,6 +21,17 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+  <!-- WinForms is only used for the tray icon: keep its types out of global scope so they never clash with WPF's
+       (Application, Color, Point, MouseEventArgs...). -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\blackhole.ico" />
   </ItemGroup>
 
   <!-- Sparse package files live next to the exe, which is the package's external location. -->

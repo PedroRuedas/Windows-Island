@@ -156,7 +156,14 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <!-- Root transform: the black-hole "swallow" animation scales and spins everything into the island's center. -->
+    <Grid x:Name="Root" RenderTransformOrigin="0.5,0.047">
+        <Grid.RenderTransform>
+            <TransformGroup>
+                <ScaleTransform x:Name="RootScale" />
+                <RotateTransform x:Name="RootSpin" />
+            </TransformGroup>
+        </Grid.RenderTransform>
         <!-- ═════════════ The island ═════════════ -->
         <Border x:Name="Island" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,8,0,0"
                 Width="140" Height="34" CornerRadius="17" Background="Black"
@@ -170,6 +177,7 @@
                     <MenuItem x:Name="NotificationsMenuItem" Header="Notificações do Windows" Click="NotificationsMenuItem_Click" />
                     <MenuItem x:Name="StartupMenuItem" Header="Iniciar com o Windows" IsCheckable="True" Click="StartupMenuItem_Click" />
                     <MenuItem x:Name="ApiMenuItem" Header="Copiar endereço da API" Click="ApiMenuItem_Click" />
+                    <MenuItem Header="Ocultar ilha (buraco negro)" Click="HideMenuItem_Click" />
                     <MenuItem Header="Testar notificação" Click="TestMenuItem_Click" />
                     <Separator />
                     <MenuItem Header="Sair" Click="ExitMenuItem_Click" />
