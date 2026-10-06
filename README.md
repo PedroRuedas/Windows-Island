@@ -15,6 +15,7 @@ A Dynamic Island do Mac/iPhone, só que para Windows. Uma pílula preta no topo 
 | **API de integração** | Notificações e atividades ao vivo (downloads, timers, builds…) enviadas por qualquer programa |
 | **Tela cheia** | A ilha se esconde em jogos, vídeos em tela cheia e apresentações |
 | **Claude Code** | Sessões por projeto ao vivo ("Editando Menu.tsx", "Executando: npm test", "Aguardando você"), **uso diário e semanal** (tokens e respostas de hoje, dos últimos 7 dias e das últimas 5h, com gráfico por dia), alerta quando ele precisa de permissão e quando **termina**, com o começo da resposta |
+| **Pergunte ao Claude** | Uma caixa de conversa com o Claude dentro da ilha (aba 💬 ou **Ctrl+Alt+Espaço** de qualquer lugar). A resposta chega em tempo real, a conversa continua entre perguntas e, se você fechar a ilha, ela avisa quando o Claude responder |
 | **Buraco negro na bandeja** | Ícone de buraco negro nos ícones ocultos da barra de tarefas (as "setinhas"): um clique e a ilha é sugada girando para dentro de si mesma e some; outro clique e ela volta. Botão direito: mostrar/ocultar, iniciar com o Windows, sair |
 | **Personalização** | Engrenagem ⚙️ na barra de abas: borda em degradê (presets como Apple Intelligence, Aurora e Pôr do sol, ou duas cores à sua escolha), espessura, degradê em movimento, brilho, relógio em repouso e iniciar com o Windows |
 
@@ -116,6 +117,20 @@ Clique em **Fixar**, no canto do vídeo na ilha, e ele passa para uma janelinha 
 - Durante anúncios a janelinha mostra a capa. Ela fecha sozinha alguns segundos depois que a aba ou o navegador fecha.
 
 Enquanto o vídeo está fixado, só a janelinha toca o vídeo, e o player da ilha fica parado. Assim não há dois vídeos decodificando ao mesmo tempo.
+
+## Pergunte ao Claude
+
+Tire dúvidas e peça ajuda rápida sem sair do que está fazendo:
+
+1. Aperte **Ctrl+Alt+Espaço** (ou abra a ilha e clique na aba 💬). Se outro app já usar esse atalho, a ilha usa **Ctrl+Shift+Espaço**.
+2. Digite e aperte **Enter** (**Shift+Enter** quebra a linha). A resposta aparece em tempo real, com negrito, `código` e listas.
+3. **Esc** fecha a ilha e devolve o foco para o app em que você estava. O Claude continua respondendo: a ilha mostra "Claude · Pensando…" e avisa com **"Claude respondeu"**. Clique no aviso para ler.
+
+As perguntas seguintes continuam a mesma conversa. Use **Nova conversa** para recomeçar e **Copiar resposta** para levar o texto. O botão ■ interrompe uma resposta.
+
+Como funciona: a ilha roda o Claude Code sem interface (`claude -p --output-format stream-json`, em [ClaudeChatService.cs](src/WindowsIsland/Services/ClaudeChatService.cs)) com o **seu login** do Claude Code. Não precisa de chave de API, e o uso conta no seu plano normalmente. O executável é encontrado no PATH, em `~/.local/bin` ou na extensão do Claude Code para VS Code. Os hooks ficam desligados nessas conversas, para elas não aparecerem como sessões na página do Claude Code.
+
+Ele pode ler arquivos e pesquisar na web. Para tarefas que editam arquivos ou rodam comandos, ele explica o que faria e sugere abrir o Claude Code, porque a ilha não tem como pedir sua permissão.
 
 ## Conectando o Claude Code
 
@@ -220,6 +235,7 @@ src/WindowsIsland/
 │   ├── YouTubeResolver.cs      Descobre qual vídeo do YouTube o navegador está tocando
 │   ├── TrayIcon.cs             Ícone do buraco negro na área de notificação
 │   ├── ClaudeService.cs        Sessões do Claude Code (hooks) + tokens e títulos (históricos locais)
+│   ├── ClaudeChatService.cs    "Pergunte ao Claude": roda `claude -p` com streaming e mantém a conversa (--resume)
 │   ├── NotificationService.cs  Espelha as notificações do Windows (UserNotificationListener) + histórico
 │   ├── PackageRegistration.cs  Registra o pacote esparso que dá identidade ao exe
 │   ├── BatteryService.cs     GetSystemPowerStatus

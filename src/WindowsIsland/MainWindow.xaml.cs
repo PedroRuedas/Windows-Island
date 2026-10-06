@@ -20,10 +20,12 @@ namespace WindowsIsland;
 
 public partial class MainWindow : Window
 {
-    private enum ViewKind { Idle, IdleExpanded, Compact, MediaExpanded, ActivityExpanded, ClaudeExpanded, NotificationsExpanded, SettingsExpanded }
+    private enum ViewKind { Idle, IdleExpanded, Compact, MediaExpanded, ActivityExpanded, ClaudeExpanded, NotificationsExpanded, SettingsExpanded, AskExpanded }
 
     private const string SettingsKey = "settings";
     private const string ClockKey = "clock";
+    private const string AskKey = "ask";
+    private const int AskHotkeyId = 0x4953;
 
     /// <summary>
     /// Something you can switch to in the expanded island (Spotify, Claude, notifications, an API activity).
@@ -43,6 +45,11 @@ public partial class MainWindow : Window
     private readonly BatteryService _battery;
     private readonly NotificationService _notifications;
     private readonly ClaudeService _claude;
+    private readonly ClaudeChatService _chat;
+    private bool _keyboard;                 // The ask box has keyboard focus (the island is activatable meanwhile).
+    private IntPtr _previousForeground;     // Where focus goes back to after asking.
+    private string? _askSignature;
+    private string _hotkeyLabel = "";
     private readonly IslandSettings _settings = IslandSettings.Load();
     private TrayIcon? _tray;
     private bool _swallowing;
@@ -94,6 +101,7 @@ public partial class MainWindow : Window
         _battery = new BatteryService(_controller);
         _notifications = new NotificationService(_controller);
         _claude = new ClaudeService(_controller, Dispatcher);
+        _chat = new ClaudeChatService(Dispatcher);
         _views = new()
         {
             [ViewKind.Idle] = IdleView,
@@ -104,6 +112,7 @@ public partial class MainWindow : Window
             [ViewKind.ClaudeExpanded] = ClaudeView,
             [ViewKind.NotificationsExpanded] = NotificationsView,
             [ViewKind.SettingsExpanded] = SettingsView,
+            [ViewKind.AskExpanded] = AskView,
         };
         foreach (var view in _views.Values)
         {
@@ -123,6 +132,17 @@ public partial class MainWindow : Window
         _controller.Arrived += _ => Peek();
         _notifications.Changed += Refresh;
         _claude.Changed += Refresh;
+        _chat.Changed += Refresh;
+        _chat.Answered += OnChatAnswered;
+        // Clicking anywhere else ends typing: the island goes back to never taking focus.
+        Deactivated += (_, _) =>
+        {
+            if (!_keyboard)
+                return;
+            DisableKeyboard(restoreFocus: false);
+            if (_hoverExpanded && !IsCursorOverIsland())
+                _leaveDelay.Start();
+        };
         _tick.Tick += (_, _) => OnTick();
         _hoverDelay.Tick += (_, _) =>
         {
@@ -137,7 +157,8 @@ public partial class MainWindow : Window
         {
             // WPF sometimes reports a leave that didn't happen (e.g. on mouse wheel over a no-activate
             // window). Trust the real cursor: keep polling until it is actually outside the island.
-            if (IsCursorOverIsland())
+            // While you're typing a question, it stays open wherever the mouse goes.
+            if (IsCursorOverIsland() || _keyboard)
                 return;
             _leaveDelay.Stop();
             _hoverExpanded = false;
@@ -156,7 +177,20 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        NativeMethods.MakeOverlayWindow(new WindowInteropHelper(this).Handle);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        NativeMethods.MakeOverlayWindow(hwnd);
+        HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+        RegisterAskHotkey(hwnd);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == NativeMethods.WM_HOTKEY && wParam.ToInt32() == AskHotkeyId)
+        {
+            handled = true;
+            OpenAsk();
+        }
+        return IntPtr.Zero;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -249,6 +283,8 @@ public partial class MainWindow : Window
         SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
         _tick.Stop();
         _pip?.Close();
+        NativeMethods.UnregisterHotKey(new WindowInteropHelper(this).Handle, AskHotkeyId);
+        _chat.Dispose();
         _battery.Stop();
         _notifications.Enabled = false;
         _claude.Dispose();
@@ -285,13 +321,14 @@ public partial class MainWindow : Window
             pages.Add(new($"activity:{activity.Id}", ViewKind.ActivityExpanded, Icons.Resolve(activity.Icon), activity.Image,
                 activity.Accent, true, activity.Priority, activity));
 
-        // While open, the tab bar always ends with the gear; with nothing else going on, the clock keeps it company.
+        // While open, the tab bar always ends with "ask Claude" and the gear; with nothing else going on, the clock
+        // keeps them company. While Claude is answering, the ask page is live (compact pill, bubble).
+        if (_hoverExpanded && pages.Count == 0)
+            pages.Add(new(ClockKey, ViewKind.IdleExpanded, Icons.Resolve("clock"), null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
+        if (_hoverExpanded || _chat.IsRunning)
+            pages.Add(new(AskKey, ViewKind.AskExpanded, Icons.Resolve("chat"), null, ClaudeService.Orange, _chat.IsRunning, _chat.IsRunning ? 60 : -1));
         if (_hoverExpanded)
-        {
-            if (pages.Count == 0)
-                pages.Add(new(ClockKey, ViewKind.IdleExpanded, Icons.Resolve("clock"), null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
-            pages.Add(new(SettingsKey, ViewKind.SettingsExpanded, "", null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
-        }
+            pages.Add(new(SettingsKey, ViewKind.SettingsExpanded, "", null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
 
         return pages;
     }
@@ -373,7 +410,7 @@ public partial class MainWindow : Window
 
         bool claudeWorking = _claude.Sessions.Any(s => s.State == ClaudeSessionState.Working);
         SetEqualizer(media?.IsPlaying == true && page?.Key == "media");
-        SetSpin(CompactIconSpin, kind == ViewKind.Compact && page?.Key == "claude" && claudeWorking);
+        SetSpin(CompactIconSpin, kind == ViewKind.Compact && (page?.Key == "claude" && claudeWorking || page?.Key == AskKey && _chat.IsRunning));
         SetSpin(ClaudeHeaderSpin, kind == ViewKind.ClaudeExpanded && claudeWorking);
 
         // Split island: the next live page sits in a bubble beside the compact pill.
@@ -525,6 +562,263 @@ public partial class MainWindow : Window
             _ = _pip.Mirror.PauseAsync();
     }
 
+    // ── Ask Claude ──
+
+    /// <summary>Global shortcut that opens the ask box from anywhere (first free combination wins).</summary>
+    private void RegisterAskHotkey(IntPtr hwnd)
+    {
+        (uint Modifiers, string Label)[] options =
+        [
+            (NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT, "Ctrl+Alt+Espaço"),
+            (NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT, "Ctrl+Shift+Espaço"),
+        ];
+        foreach (var (modifiers, label) in options)
+        {
+            if (NativeMethods.RegisterHotKey(hwnd, AskHotkeyId, modifiers | NativeMethods.MOD_NOREPEAT, NativeMethods.VK_SPACE))
+            {
+                _hotkeyLabel = label;
+                return;
+            }
+        }
+        App.Log("Atalho para perguntar ao Claude indisponível (as combinações já estão em uso por outro app).");
+    }
+
+    /// <summary>Opens the ask page with the cursor in the box, ready to type.</summary>
+    private void OpenAsk()
+    {
+        if (_settings.Hidden || !IsVisible)
+            return;
+        _hoverDelay.Stop();
+        _leaveDelay.Stop();
+        _selectedKey = AskKey;
+        _hoverExpanded = true;
+        Refresh();
+        EnableKeyboard();
+    }
+
+    /// <summary>Lets the island take keyboard focus for typing (it normally never activates).</summary>
+    private void EnableKeyboard()
+    {
+        if (!_keyboard)
+        {
+            _keyboard = true;
+            _previousForeground = NativeMethods.GetForegroundWindow();
+            NativeMethods.SetNoActivate(new WindowInteropHelper(this).Handle, false);
+            Activate();
+        }
+        AskInput.Focus();
+        Keyboard.Focus(AskInput);
+    }
+
+    private void DisableKeyboard(bool restoreFocus)
+    {
+        if (!_keyboard)
+            return;
+        _keyboard = false;
+        NativeMethods.SetNoActivate(new WindowInteropHelper(this).Handle, true);
+        Keyboard.ClearFocus();
+        if (restoreFocus && _previousForeground != IntPtr.Zero)
+            NativeMethods.SetForegroundWindow(_previousForeground);
+        _previousForeground = IntPtr.Zero;
+    }
+
+    private void AskInput_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) => EnableKeyboard();
+
+    private void AskInput_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        {
+            // Enter sends; Shift+Enter breaks the line.
+            e.Handled = true;
+            SendAsk();
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            DisableKeyboard(restoreFocus: true);
+            _hoverExpanded = false;
+            Refresh();
+        }
+    }
+
+    private void AskInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        AskPlaceholder.Visibility = AskInput.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        // A longer question wraps onto more lines: grow the island with it.
+        ResizeToCurrentView();
+    }
+
+    private void AskSend_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (_chat.IsRunning)
+            _chat.Cancel();
+        else
+            SendAsk();
+    }
+
+    private void AskNew_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        _chat.NewConversation();
+        if (_keyboard)
+            AskInput.Focus();
+    }
+
+    private void SendAsk()
+    {
+        if (_chat.IsRunning || string.IsNullOrWhiteSpace(AskInput.Text))
+            return;
+        _chat.Send(AskInput.Text);
+        AskInput.Clear();
+    }
+
+    /// <summary>When the answer lands while you're elsewhere, the island tells you (click it to read).</summary>
+    private void OnChatAnswered(string text)
+    {
+        if (_hoverExpanded && _shownPage?.Key == AskKey)
+            return;
+        string preview = text.Replace("**", "").Replace("`", "").ReplaceLineEndings(" ").Trim();
+        _controller.Upsert(new IslandActivity
+        {
+            Id = "ask.answer",
+            Caption = "Claude",
+            Title = "Claude respondeu",
+            Subtitle = preview.Length > 140 ? preview[..140] + "…" : preview,
+            Icon = "claude",
+            Accent = ClaudeService.Orange,
+            Duration = TimeSpan.FromSeconds(8),
+            Priority = 70,
+            ExpandOnArrive = true,
+            Source = AskKey,
+        });
+    }
+
+    private void FillAsk()
+    {
+        bool running = _chat.IsRunning;
+        var messages = _chat.Messages;
+        AskStatus.Text = _chat.Status;
+        AskStatus.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        AskNewButton.Visibility = messages.Count > 0 && !running ? Visibility.Visible : Visibility.Collapsed;
+        AskHint.Visibility = messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        AskHint.Text = "Tire dúvidas ou peça uma ajuda rápida. O Claude responde aqui mesmo, com o seu login do Claude Code."
+            + (_hotkeyLabel.Length > 0 ? $" {_hotkeyLabel} abre esta caixa de qualquer lugar." : "");
+        AskSendGlyph.Text = running ? "" : "";
+        AskSendButton.ToolTip = running ? "Parar a resposta" : "Enviar (Enter)";
+        SetSpin(AskHeaderSpin, running);
+
+        string signature = $"{messages.Count}|{messages.LastOrDefault()?.Text.Length}|{running}";
+        if (signature == _askSignature)
+            return;
+        _askSignature = signature;
+
+        AskMessages.Children.Clear();
+        for (int i = 0; i < messages.Count; i++)
+        {
+            var message = messages[i];
+            bool last = i == messages.Count - 1;
+            if (message.FromUser)
+            {
+                AskMessages.Children.Add(new Border
+                {
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    MaxWidth = 300,
+                    Margin = new Thickness(40, i == 0 ? 0 : 12, 0, 0),
+                    Padding = new Thickness(12, 7, 12, 7),
+                    CornerRadius = new CornerRadius(15),
+                    Background = new SolidColorBrush(Color.FromRgb(0x2C, 0x2C, 0x2E)),
+                    Child = new TextBlock { Text = message.Text, Foreground = Brushes.White, FontSize = 13, TextWrapping = TextWrapping.Wrap },
+                });
+                continue;
+            }
+
+            var answer = new TextBlock
+            {
+                Margin = new Thickness(0, 8, 0, 0),
+                FontSize = 13,
+                LineHeight = 19,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = message.IsError ? new SolidColorBrush(Color.FromRgb(0xFF, 0x8A, 0x80)) : new SolidColorBrush(Color.FromArgb(0xEB, 0xFF, 0xFF, 0xFF)),
+            };
+            if (message.Text.Length == 0 && running && last)
+                answer.Inlines.Add(new Run("…") { Foreground = (Brush)FindResource("DimText") });
+            else
+                AddFormatted(answer.Inlines, message.Text);
+            AskMessages.Children.Add(answer);
+
+            // The latest answer can be copied (TextBlocks aren't selectable).
+            if (last && !running && !message.IsError && message.Text.Length > 0)
+            {
+                var copy = new Button { Style = (Style)FindResource("TextButton"), Content = "Copiar resposta", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
+                string text = message.Text;
+                copy.Click += (_, e) =>
+                {
+                    e.Handled = true;
+                    try
+                    {
+                        Clipboard.SetText(text);
+                        copy.Content = "Copiada ✓";
+                    }
+                    catch (Exception ex)
+                    {
+                        App.Log(ex);
+                    }
+                };
+                AskMessages.Children.Add(copy);
+            }
+        }
+        AskScroll.Visibility = messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // After layout, follow the newest text.
+        Dispatcher.BeginInvoke(AskScroll.ScrollToEnd, DispatcherPriority.Loaded);
+        ResizeToCurrentView();
+    }
+
+    /// <summary>Just enough Markdown for chat answers: **bold**, `code`, bullet lists and headings.</summary>
+    private static void AddFormatted(InlineCollection inlines, string text)
+    {
+        var code = new FontFamily("Cascadia Mono, Consolas");
+        string[] lines = text.ReplaceLineEndings("\n").Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+                inlines.Add(new LineBreak());
+            string line = lines[i];
+            bool heading = false;
+            string trimmed = line.TrimStart();
+            if (trimmed.StartsWith('#'))
+            {
+                line = trimmed.TrimStart('#').TrimStart();
+                heading = true;
+            }
+            else if (trimmed.StartsWith("- ") || trimmed.StartsWith("* "))
+            {
+                line = new string(' ', line.Length - trimmed.Length) + "•  " + trimmed[2..];
+            }
+
+            foreach (var part in System.Text.RegularExpressions.Regex.Split(line, @"(\*\*[^*]+\*\*|`[^`]+`)"))
+            {
+                if (part.Length == 0)
+                    continue;
+                if (part.Length > 4 && part.StartsWith("**") && part.EndsWith("**"))
+                    inlines.Add(new Run(part[2..^2]) { FontWeight = FontWeights.SemiBold, Foreground = Brushes.White });
+                else if (part.Length > 2 && part[0] == '`' && part[^1] == '`')
+                    inlines.Add(new Run(part[1..^1]) { FontFamily = code, FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xB8, 0x80)) });
+                else
+                    inlines.Add(new Run(part) { FontWeight = heading ? FontWeights.SemiBold : FontWeights.Normal });
+            }
+        }
+    }
+
+    /// <summary>The ask page changes size as you type and as the answer streams in: spring the island to fit.</summary>
+    private void ResizeToCurrentView()
+    {
+        if (_view != ViewKind.AskExpanded)
+            return;
+        _height.Target = MeasureHeight(AskView) + (_pagerVisible ? PagerHeight : 0);
+        StartAnimation();
+    }
+
     private void FillCompactPage(Page page, MediaInfo? media)
     {
         switch (page.Key)
@@ -537,6 +831,10 @@ public partial class MainWindow : Window
                 break;
             case "notifications":
                 FillCompactNotifications();
+                break;
+            case AskKey:
+                SetBadge(CompactBadge, CompactIcon, null, "claude", ClaudeService.Orange, 13);
+                SetCompactText("Claude", "", _chat.Status);
                 break;
             default:
                 if (page.Activity is not null)
@@ -554,6 +852,10 @@ public partial class MainWindow : Window
                 break;
             case ViewKind.ClaudeExpanded:
                 FillClaude();
+                break;
+            case ViewKind.AskExpanded:
+                FillAsk();
+                _chat.HasUnread = false;
                 break;
             case ViewKind.NotificationsExpanded:
                 FillNotifications();
@@ -1029,7 +1331,7 @@ public partial class MainWindow : Window
                 Opacity = restOpacity,
                 Cursor = Cursors.Hand,
                 Child = content,
-                ToolTip = page.Key switch { "media" => "Música", "claude" => "Claude Code", "notifications" => "Notificações", SettingsKey => "Personalizar", ClockKey => "Relógio", _ => page.Activity?.Title },
+                ToolTip = page.Key switch { "media" => "Música", "claude" => "Claude Code", "notifications" => "Notificações", AskKey => "Perguntar ao Claude", SettingsKey => "Personalizar", ClockKey => "Relógio", _ => page.Activity?.Title },
             };
             tab.MouseEnter += (_, _) => tab.Opacity = 1;
             tab.MouseLeave += (_, _) => tab.Opacity = restOpacity;
@@ -1074,6 +1376,7 @@ public partial class MainWindow : Window
             ViewKind.ClaudeExpanded => (400.0, MeasureHeight(ClaudeView), 36.0),
             ViewKind.NotificationsExpanded => (400.0, MeasureHeight(NotificationsView), 36.0),
             ViewKind.SettingsExpanded => (400.0, MeasureHeight(SettingsView), 36.0),
+            ViewKind.AskExpanded => (400.0, MeasureHeight(AskView), 36.0),
             _ => (400.0, MeasureHeight(ActivityView), 34.0),
         };
         if (_pagerVisible)
@@ -1300,7 +1603,7 @@ public partial class MainWindow : Window
 
         // Mouse-leave is not always delivered to a no-activate window (e.g. right after clicking a control
         // that captured the mouse). Self-heal: if the cursor is gone, start the normal collapse.
-        if (_hoverExpanded && !_leaveDelay.IsEnabled && !IsCursorOverIsland())
+        if (_hoverExpanded && !_leaveDelay.IsEnabled && !_keyboard && !IsCursorOverIsland())
             _leaveDelay.Start();
 
         // Once a second: elapsed timers ("2:31"), "há 3 min" labels, stale Claude sessions.
@@ -1369,6 +1672,16 @@ public partial class MainWindow : Window
         // Alerts and API activities: open their link (if any) and dismiss.
         if ((_shownAlert ?? _shownPage?.Activity) is { } activity)
         {
+            // "Claude respondeu": open the conversation.
+            if (activity.Source == AskKey)
+            {
+                _controller.Remove(activity.Id);
+                _hoverDelay.Stop();
+                _selectedKey = AskKey;
+                _hoverExpanded = true;
+                Refresh();
+                return;
+            }
             OpenUrl(activity.ActionUrl);
             _controller.Remove(activity.Id);
             return;

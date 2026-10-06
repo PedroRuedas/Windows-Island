@@ -156,6 +156,55 @@
             <Setter Property="Margin" Value="0,14,0,8" />
         </Style>
 
+        <!-- Round Claude-orange send button of the ask box (turns into a stop button while answering). -->
+        <Style x:Key="SendButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#D97757" CornerRadius="15" RenderTransformOrigin="0.5,0.5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#E58A6C" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.88" ScaleY="0.88" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bg" Property="Background" Value="#3A3A3C" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Bare text box: the rounded field around it is drawn by its parent. -->
+        <Style x:Key="AskTextBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="SelectionBrush" Value="#D97757" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="MaxHeight" Value="76" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Hidden" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Background="Transparent" Focusable="False" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Clickable list row (Claude sessions, notifications). -->
         <Style x:Key="RowBorder" TargetType="Border">
             <Setter Property="Background" Value="Transparent" />
@@ -483,6 +532,59 @@
                             <TextBlock Text="Iniciar com o Windows" Style="{StaticResource SettingLabel}" />
                             <CheckBox x:Name="StartupToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
                         </Grid>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ASK CLAUDE: a conversation with Claude Code (the user's own login), right in the island -->
+                <Grid x:Name="AskView" Width="400" Opacity="0" IsHitTestVisible="False">
+                    <StackPanel Margin="22,18,22,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock FontFamily="Segoe UI Symbol" FontSize="18" Foreground="#D97757" VerticalAlignment="Center"
+                                       Text="&#x273B;" RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform x:Name="AskHeaderSpin" />
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="Pergunte ao Claude" Foreground="White" FontSize="15.5" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" />
+                                <TextBlock x:Name="AskStatus" Foreground="{StaticResource DimText}" FontSize="11.5" Visibility="Collapsed" />
+                            </StackPanel>
+                            <Button x:Name="AskNewButton" Grid.Column="2" Style="{StaticResource TextButton}" Content="Nova conversa"
+                                    VerticalAlignment="Center" Click="AskNew_Click" Visibility="Collapsed" />
+                        </Grid>
+
+                        <TextBlock x:Name="AskHint" Margin="0,10,0,0" Foreground="{StaticResource FaintText}" FontSize="12" TextWrapping="Wrap" />
+
+                        <!-- The conversation (built in code). The wheel scrolls it; the scrollbar stays hidden. -->
+                        <ScrollViewer x:Name="AskScroll" Margin="0,10,0,0" MaxHeight="240" VerticalScrollBarVisibility="Hidden"
+                                      Focusable="False" Visibility="Collapsed">
+                            <StackPanel x:Name="AskMessages" />
+                        </ScrollViewer>
+
+                        <Border Margin="0,12,0,0" CornerRadius="19" Background="#1C1C1E" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="14,4,4,4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid VerticalAlignment="Center" Cursor="IBeam">
+                                    <TextBlock x:Name="AskPlaceholder" Text="Pergunte ou peça algo…" Foreground="{StaticResource FaintText}" FontSize="13"
+                                               VerticalAlignment="Center" Margin="2,0,0,0" IsHitTestVisible="False" />
+                                    <TextBox x:Name="AskInput" Style="{StaticResource AskTextBox}" VerticalAlignment="Center"
+                                             PreviewMouseLeftButtonDown="AskInput_PreviewMouseLeftButtonDown"
+                                             PreviewKeyDown="AskInput_PreviewKeyDown" TextChanged="AskInput_TextChanged" />
+                                </Grid>
+                                <Button x:Name="AskSendButton" Grid.Column="1" Style="{StaticResource SendButton}" Width="30" Height="30" Margin="8,0,0,0"
+                                        VerticalAlignment="Bottom" Click="AskSend_Click" ToolTip="Enviar (Enter)">
+                                    <TextBlock x:Name="AskSendGlyph" FontFamily="{StaticResource IconFont}" Text="&#xE74A;" FontSize="13" Foreground="White" />
+                                </Button>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Grid>
 
