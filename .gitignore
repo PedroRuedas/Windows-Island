@@ -3,3 +3,8 @@ obj/
 .vs/
 *.user
 publish/
+
+# Installer build output, downloaded tools and the private signing key (never commit the .pfx)
+installer/out/
+installer/.tools/
+installer/.signing/

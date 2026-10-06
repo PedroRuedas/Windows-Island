@@ -15,7 +15,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>WindowsIsland</AssemblyName>
     <RootNamespace>WindowsIsland</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,8 +36,9 @@
 
   <!-- Sparse package files live next to the exe, which is the package's external location. -->
   <ItemGroup>
-    <None Include="Package\AppxManifest.xml" Link="AppxManifest.xml" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Package\Assets\*.png" Link="Assets\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ExcludeFromSingleFile: the package is registered against real files next to the exe. -->
+    <None Include="Package\AppxManifest.xml" Link="AppxManifest.xml" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="Package\Assets\*.png" Link="Assets\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
 </Project>
