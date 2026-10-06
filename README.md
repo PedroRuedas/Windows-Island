@@ -7,7 +7,7 @@ A Dynamic Island do Mac/iPhone, só que para Windows. Uma pílula preta no topo 
 | Recurso | Como aparece |
 | --- | --- |
 | **Mídia**: Spotify, YouTube no navegador, Media Player e qualquer app que use os controles de mídia do Windows | Compacto: capa + música + equalizador na cor da capa. Quando a música muda, a ilha se abre por 3 s mostrando o que está tocando. Ao passar o mouse: capa, artista, barra de progresso (clique para pular para um ponto) e botões ⏮ ⏯ ⏭ |
-| **YouTube no navegador** (Chrome, Edge, Brave, Firefox…) | Ao abrir a ilha na página de música, **o próprio vídeo toca lá em cima**: mudo (o som continua no navegador) e sincronizado com a posição e o play/pause da aba |
+| **YouTube no navegador** (Chrome, Edge, Brave, Firefox…) | Ao abrir a ilha na página de música, **o próprio vídeo toca lá em cima**: mudo (o som continua no navegador) e sincronizado com a posição e o play/pause da aba. Com **Fixar**, o vídeo sai da ilha para uma janelinha sempre visível que você arrasta pela tela (picture-in-picture) |
 | **Notificações do Windows**: WhatsApp, Teams, Outlook, Discord… | Cada notificação nova aparece expandida com o ícone e o nome do app, o título e o texto. Dispensar no Central de Notificações também tira da ilha |
 | **Volume** | Ao mudar o volume, a ilha vira uma barra de nível (acompanha a troca de dispositivo de saída) |
 | **Bateria** | Avisos de carregador conectado/desconectado e de bateria fraca (20%, 10%, 5%) |
@@ -104,6 +104,19 @@ Limitações:
 - Ao carregar, pausar ou pular, o YouTube exibe a própria sobreposição (título, logo) por alguns segundos.
 - O título do vídeo que está tocando é enviado ao YouTube na busca.
 
+### Fixar o vídeo na tela (picture-in-picture)
+
+Clique em **Fixar**, no canto do vídeo na ilha, e ele passa para uma janelinha que fica por cima de tudo, mesmo com a ilha fechada ou escondida no buraco negro:
+
+- **Arraste** por qualquer ponto do vídeo para movê-la. Perto das bordas ou dos cantos da tela, ela gruda nelas, como no iPhone e no Mac.
+- **Redimensione** pela alça no canto inferior direito ou com a **roda do mouse** sobre o vídeo. Ela mantém a proporção 16:9.
+- **Passe o mouse** para ver o título, ⏮ ⏯ ⏭ e a barra de progresso (clique para pular). Os botões controlam a aba do navegador.
+- **⤡ Voltar para a ilha** devolve o vídeo à ilha. O **✕** fecha a janelinha. Na ilha, a faixa "Vídeo fixado na tela" tem o botão **Trazer de volta**.
+- A posição e o tamanho ficam salvos em `settings.json`.
+- Durante anúncios a janelinha mostra a capa. Ela fecha sozinha alguns segundos depois que a aba ou o navegador fecha.
+
+Enquanto o vídeo está fixado, só a janelinha toca o vídeo, e o player da ilha fica parado. Assim não há dois vídeos decodificando ao mesmo tempo.
+
 ## Conectando o Claude Code
 
 O consumo de tokens é lido sozinho dos históricos locais (`~/.claude/projects`). Para o status ao vivo das sessões, adicione estes hooks em `~/.claude/settings.json`. Eles mandam cada evento para a ilha em segundo plano (`async`), sem atrasar o Claude, e não fazem nada se a ilha estiver fechada:
@@ -195,6 +208,7 @@ await notify({ title: "Testes passaram", icon: "check", color: "#30D158" });
 ```
 src/WindowsIsland/
 ├── MainWindow.xaml(.cs)      A ilha: janela transparente, views e animação de mola
+├── VideoPipWindow.xaml(.cs)  Vídeo fixado: janelinha arrastável com ímã nas bordas, redimensionável, controles no hover
 ├── Core/
 │   ├── IslandController.cs   Fila de atividades por prioridade + expiração + mídia
 │   ├── IslandActivity.cs     Modelo de uma atividade

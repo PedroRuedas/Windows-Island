@@ -42,6 +42,13 @@ public sealed class IslandSettings
     /// <summary>Swallowed by the black hole (tray icon): the island stays hidden, even across restarts.</summary>
     public bool Hidden { get; set; }
 
+    /// <summary>Where the pinned YouTube window was last left (screen DIPs of the video's top-left; null = default corner).</summary>
+    public double? PipLeft { get; set; }
+    public double? PipTop { get; set; }
+
+    /// <summary>Width of the pinned video in DIPs (its height follows 16:9).</summary>
+    public double? PipWidth { get; set; }
+
     /// <summary>The gradient stops for the current choice; empty = classic hairline.</summary>
     public Color[] BorderColors()
     {

@@ -15,7 +15,7 @@ namespace WindowsIsland.Controls;
 /// Uses WebView2CompositionControl because a regular WebView2 is a child HWND, which cannot render inside the
 /// island's transparent (layered) window.
 /// </summary>
-public sealed class YouTubeMirror
+public sealed class YouTubeMirror : IDisposable
 {
     private const string Host = "island.player";
     private const double MaxDriftSeconds = 1.5;
@@ -39,6 +39,9 @@ public sealed class YouTubeMirror
 
     /// <summary>The embed refused to play (owner disabled embedding, region lock...).</summary>
     public event Action<string>? Failed;
+
+    /// <summary>The player has a frame to show (playing, paused or cued), so it no longer looks black. UI thread.</summary>
+    public event Action? FrameReady;
 
     /// <summary>Shows <paramref name="videoId"/> at the browser's position and follows it. UI thread.</summary>
     public async Task ShowAsync(string videoId, TimeSpan position, bool playing)
@@ -82,6 +85,9 @@ public sealed class YouTubeMirror
         }
     }
 
+    /// <summary>Shuts the player's browser instance down. UI thread.</summary>
+    public void Dispose() => View.Dispose();
+
     private async Task SyncAsync(TimeSpan target, bool playing)
     {
         string result = await Run("island.time()");
@@ -122,11 +128,17 @@ public sealed class YouTubeMirror
         try
         {
             using var doc = JsonDocument.Parse(e.WebMessageAsJson);
-            if (doc.RootElement.GetProperty("type").GetString() == "error" && _videoId is { } id)
+            string? type = doc.RootElement.GetProperty("type").GetString();
+            if (type == "error" && _videoId is { } id)
             {
                 App.Log($"YouTube: o vídeo {id} não pode ser incorporado (erro {doc.RootElement.GetProperty("code")})");
                 _videoId = null;
                 Failed?.Invoke(id);
+            }
+            // YT.PlayerState: 1 = playing, 2 = paused, 5 = cued.
+            else if (type == "state" && doc.RootElement.GetProperty("state").GetInt32() is 1 or 2 or 5)
+            {
+                FrameReady?.Invoke();
             }
         }
         catch (Exception ex)
@@ -169,6 +181,7 @@ public sealed class YouTubeMirror
                     player.mute();
                     if (pending) { island.load(pending.id, pending.t, pending.play); pending = null; }
                   },
+                  onStateChange: function (e) { post({ type: 'state', state: e.data }); },
                   onError: function (e) { post({ type: 'error', code: e.data }); }
                 }
               });

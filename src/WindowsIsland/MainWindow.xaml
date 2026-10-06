@@ -8,21 +8,36 @@
         FontFamily="Segoe UI Variable Text, Segoe UI" UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="Grayscale">
 
+    <!-- Fonts, text brushes and transport geometries are shared from App.xaml. -->
     <Window.Resources>
-        <!-- Glyphs outside Fluent Icons (like Claude's ✻) get Segoe UI Symbol in code: see GlyphFont. -->
-        <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
-        <!-- Display cut for headings, the closest Windows match to SF Pro Display. -->
-        <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
-        <SolidColorBrush x:Key="DimText" Color="#A6FFFFFF" />
-        <SolidColorBrush x:Key="FaintText" Color="#61FFFFFF" />
-
-        <!-- Filled transport symbols, drawn as vectors (in the spirit of SF Symbols play.fill, pause.fill, forward.fill). -->
-        <Geometry x:Key="PlayGeometry">M 3,1.6 C 3,0.6 4.1,0 5,0.6 L 15.3,7.1 C 16.1,7.6 16.1,8.4 15.3,8.9 L 5,15.4 C 4.1,16 3,15.4 3,14.4 Z</Geometry>
-        <GeometryGroup x:Key="PauseGeometry">
-            <RectangleGeometry Rect="2.5,1,4.4,14" RadiusX="1.3" RadiusY="1.3" />
-            <RectangleGeometry Rect="9.1,1,4.4,14" RadiusX="1.3" RadiusY="1.3" />
-        </GeometryGroup>
-        <Geometry x:Key="ForwardGeometry">M 0.5,1.9 C 0.5,1 1.5,0.5 2.2,1.1 L 8.4,6.1 C 9,6.6 9,7.4 8.4,7.9 L 2.2,12.9 C 1.5,13.5 0.5,13 0.5,12.1 Z M 9.3,1.9 C 9.3,1 10.3,0.5 11,1.1 L 17.2,6.1 C 17.8,6.6 17.8,7.4 17.2,7.9 L 11,12.9 C 10.3,13.5 9.3,13 9.3,12.1 Z</Geometry>
+        <!-- Small dark "glass" pill drawn over the video (e.g. "Fixar"). -->
+        <Style x:Key="GlassButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="#A6000000" CornerRadius="11" Padding="9,4" RenderTransformOrigin="0.5,0.5">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#E61C1C1E" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.92" ScaleY="0.92" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style x:Key="IconButton" TargetType="Button">
             <Setter Property="Foreground" Value="White" />
@@ -238,7 +253,33 @@
                         </Grid.RowDefinitions>
 
                         <!-- YouTube: the video itself, mirrored from the browser (muted, in sync). Clipped to rounded corners in code. -->
-                        <Border x:Name="VideoHost" Width="356" Height="200" Background="#0DFFFFFF" Margin="0,0,0,14" Visibility="Collapsed" />
+                        <Grid x:Name="VideoArea" Margin="0,0,0,14" Visibility="Collapsed">
+                            <Border x:Name="VideoHost" Width="356" Height="200" Background="#0DFFFFFF" />
+                            <Button Style="{StaticResource GlassButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8"
+                                    Click="PinVideo_Click" ToolTip="Fixar o vídeo numa janelinha que você pode mover pela tela">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE718;" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBlock Text="Fixar" FontWeight="SemiBold" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <!-- While the video is pinned to its own window, the island just says so. -->
+                        <Border x:Name="PinnedBar" Height="40" CornerRadius="12" Background="#14FFFFFF" Padding="12,0,6,0" Margin="0,0,0,14"
+                                Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE718;" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Vídeo fixado na tela" Foreground="{StaticResource DimText}" FontSize="12.5"
+                                           Margin="10,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                <Button Grid.Column="2" Style="{StaticResource TextButton}" Content="Trazer de volta" VerticalAlignment="Center"
+                                        Click="UnpinVideo_Click" />
+                            </Grid>
+                        </Border>
 
                         <Grid Grid.Row="1">
                             <Grid.ColumnDefinitions>

@@ -52,6 +52,8 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _unembeddable = new();
     private YouTubeMirror? _mirror;
     private bool _videoShown;
+    private VideoPipWindow? _pip;          // The video pinned out of the island, if any.
+    private DateTime? _pipMediaLostSince;  // When the pinned video's browser session went away.
     private ApiServer? _api;
 
     // Island geometry is driven by springs instead of storyboards for the Apple-like overshoot.
@@ -246,6 +248,7 @@ public partial class MainWindow : Window
     {
         SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
         _tick.Stop();
+        _pip?.Close();
         _battery.Stop();
         _notifications.Enabled = false;
         _claude.Dispose();
@@ -384,6 +387,7 @@ public partial class MainWindow : Window
         string shownKey = _shownAlert is not null ? $"alert:{_shownAlert.Id}" : page?.Key ?? kind.ToString();
         ShowView(kind, shownKey, direction);
         UpdateVideoMirror(kind, media);
+        UpdatePip();
     }
 
     /// <summary>The YouTube video the browser is playing, once identified (null while unknown or not YouTube).</summary>
@@ -397,10 +401,13 @@ public partial class MainWindow : Window
         return null;
     }
 
-    /// <summary>Plays the mirror while the player page is open; pauses it otherwise so it costs nothing.</summary>
+    /// <summary>
+    /// Plays the mirror while the player page is open; pauses it otherwise so it costs nothing.
+    /// While the video is pinned, the pinned window plays it instead.
+    /// </summary>
     private void UpdateVideoMirror(ViewKind kind, MediaInfo? media)
     {
-        if (media is not null && CurrentVideo(media) is { } video && kind == ViewKind.MediaExpanded)
+        if (_pip is null && media is not null && CurrentVideo(media) is { } video && kind == ViewKind.MediaExpanded)
         {
             if (_mirror is null)
             {
@@ -421,6 +428,101 @@ public partial class MainWindow : Window
             _videoShown = false;
             _ = _mirror?.PauseAsync();
         }
+    }
+
+    // ── Pinned video (picture-in-picture) ──
+
+    private void PinVideo_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        PinVideo();
+    }
+
+    private void UnpinVideo_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        UnpinVideo(returnToIsland: true);
+    }
+
+    /// <summary>Moves the YouTube video out of the island into a small window that stays on top and can be dragged anywhere.</summary>
+    private void PinVideo()
+    {
+        if (_pip is not null)
+            return;
+        var mirror = new YouTubeMirror();
+        mirror.Failed += id =>
+        {
+            _unembeddable.Add(id);
+            Refresh();
+        };
+        _pip = new VideoPipWindow(_settings, mirror);
+        _pip.PlayPauseRequested += async () => await RunMedia(_media.TogglePlayPauseAsync);
+        _pip.PreviousRequested += async () => await RunMedia(_media.PreviousAsync);
+        _pip.NextRequested += async () => await RunMedia(_media.NextAsync);
+        _pip.SeekRequested += async fraction =>
+        {
+            if (_controller.Media is { Duration.TotalSeconds: > 0 } media)
+                await RunMedia(() => _media.SeekAsync(media.Duration * fraction));
+        };
+        _pip.CloseRequested += () => UnpinVideo(returnToIsland: false);
+        _pip.ReturnRequested += () => UnpinVideo(returnToIsland: true);
+        _pipMediaLostSince = null;
+        _pip.Show();
+
+        // The island doesn't need to stay open: the video now lives in its own window.
+        _hoverExpanded = false;
+        _hoverDelay.Stop();
+        _leaveDelay.Stop();
+        Refresh();
+    }
+
+    /// <summary>Closes the pinned window; when going back to the island, shows the player there for a moment.</summary>
+    private void UnpinVideo(bool returnToIsland)
+    {
+        if (_pip is not { } pip)
+            return;
+        _pip = null;
+        pip.CloseAnimated();
+        if (returnToIsland && FindPage("media") is not null)
+        {
+            _selectedKey = "media";
+            _peekingMedia = true;
+            _mediaPeekTimer.Stop();
+            _mediaPeekTimer.Start();
+        }
+        Refresh();
+    }
+
+    /// <summary>
+    /// Keeps the pinned window on the browser's video, like the island's own player. Runs even while the island
+    /// is hidden. Closes the window once the browser's media session has been gone for a few seconds.
+    /// </summary>
+    private void UpdatePip()
+    {
+        if (_pip is null)
+            return;
+        var media = _controller.Media;
+        if (media is null || !YouTubeResolver.IsBrowser(media.SourceApp))
+        {
+            _pipMediaLostSince ??= DateTime.Now;
+            if (DateTime.Now - _pipMediaLostSince > TimeSpan.FromSeconds(5))
+            {
+                UnpinVideo(returnToIsland: false);
+                return;
+            }
+            _pip.Update(null, hasVideo: false);
+            _ = _pip.Mirror.PauseAsync();
+            return;
+        }
+
+        _pipMediaLostSince = null;
+        // Ads and videos that refuse embedding have no mirror: the window shows the artwork until a video is back.
+        var video = CurrentVideo(media);
+        _pip.Update(media, video is not null);
+        if (video is not null)
+            _ = _pip.Mirror.ShowAsync(video.VideoId, media.CurrentPosition, media.IsPlaying);
+        else
+            _ = _pip.Mirror.PauseAsync();
     }
 
     private void FillCompactPage(Page page, MediaInfo? media)
@@ -576,9 +678,11 @@ public partial class MainWindow : Window
 
     private void FillMedia(MediaInfo media)
     {
-        // YouTube in a browser: the video takes the artwork's place, above the title.
-        bool video = CurrentVideo(media) is not null;
-        VideoHost.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+        // YouTube in a browser: the video takes the artwork's place, above the title (unless it's pinned to its own window).
+        bool pinned = _pip is not null;
+        bool video = !pinned && CurrentVideo(media) is not null;
+        VideoArea.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+        PinnedBar.Visibility = pinned ? Visibility.Visible : Visibility.Collapsed;
         MediaArt.Visibility = video ? Visibility.Collapsed : Visibility.Visible;
         MediaTexts.Margin = video ? new Thickness(0, 0, 14, 0) : new Thickness(14, 0, 14, 0);
 
@@ -1190,6 +1294,9 @@ public partial class MainWindow : Window
 
         if (_view == ViewKind.MediaExpanded && _controller.Media is { } media)
             UpdateMediaTimeline(media);
+
+        // The pinned video follows the browser twice a second, whether or not the island itself is visible.
+        UpdatePip();
 
         // Mouse-leave is not always delivered to a no-activate window (e.g. right after clicking a control
         // that captured the mouse). Self-heal: if the cursor is gone, start the normal collapse.
