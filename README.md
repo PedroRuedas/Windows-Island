@@ -30,7 +30,29 @@ A ilha funciona como as Live Activities do iPhone. Cada fonte (música, Claude, 
 
 **Botão direito** abre o menu (notificações do Windows, iniciar com o Windows, copiar endereço da API, testar, sair).
 
-## Rodando
+## Instalando
+
+Baixe o **`WindowsIsland-Setup-<versão>.exe`** na página de [Releases](https://github.com/PedroRuedas/Windows-Island/releases) e execute. Ele:
+
+- instala em `C:\Program Files\Windows Island`, com o .NET embutido (não precisa instalar nada antes);
+- cria o atalho no Menu Iniciar e, se você marcar, inicia com o Windows;
+- já deixa as **notificações do Windows** (WhatsApp, Teams…) funcionando, sem Modo de Desenvolvedor: instala o certificado do pacote e registra a identidade do app (por isso pede permissão de administrador).
+
+Requisitos: Windows 10 2004+ ou Windows 11 (x64). O vídeo do YouTube usa o WebView2, que já vem no Windows 11 e na maioria dos Windows 10.
+
+> O Windows SmartScreen pode avisar que o instalador "não é reconhecido", porque ele não é assinado por uma autoridade comercial. Clique em **Mais informações → Executar assim mesmo**.
+
+Para desinstalar: Configurações → Aplicativos → Windows Island → Desinstalar. O pacote e o certificado também são removidos.
+
+### Gerando o instalador
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installer\build.ps1
+```
+
+O script publica o app, empacota e assina o pacote de identidade e compila o instalador com o [Inno Setup](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`). Na primeira execução ele cria o certificado de assinatura em `installer\.signing\`, que fica fora do Git. Guarde essa pasta: versões novas precisam ser assinadas pelo mesmo certificado para atualizar as instalações existentes.
+
+## Rodando a partir do código
 
 Requisitos: Windows 10 (2004+) ou 11, com o [.NET 10 SDK](https://dotnet.microsoft.com/download).
 

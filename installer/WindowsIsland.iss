@@ -69,8 +69,9 @@ Filename: "{sys}\certutil.exe"; Parameters: "-f -addstore TrustedPeople ""{app}\
     Flags: runhidden; StatusMsg: "{cm:TrustingCert}"
 ; 2. Register the sparse package for the user who ran setup: gives WindowsIsland.exe its identity,
 ;    which Windows requires before an app may read notifications (WhatsApp, Teams...).
+;    A Developer Mode registration (from running a dev build) blocks a signed one (0x80073CFB): drop it first.
 Filename: "powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Add-AppxPackage -Path '{app}\package\WindowsIsland.msix' -ExternalLocation '{app}' -ForceUpdateFromAnyVersion"""; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-AppxPackage -Name WindowsIsland | Where-Object IsDevelopmentMode | Remove-AppxPackage; Add-AppxPackage -Path '{app}\package\WindowsIsland.msix' -ExternalLocation '{app}' -ForceUpdateFromAnyVersion"""; \
     Flags: runhidden runasoriginaluser; StatusMsg: "{cm:RegisteringPackage}"
 Filename: "{app}\WindowsIsland.exe"; Description: "{cm:LaunchProgram,Windows Island}"; \
     Flags: nowait postinstall skipifsilent runasoriginaluser
