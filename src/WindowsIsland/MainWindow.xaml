@@ -276,6 +276,7 @@
                     <MenuItem x:Name="ApiMenuItem" Header="Copiar endereço da API" Click="ApiMenuItem_Click" />
                     <MenuItem Header="Ocultar ilha (buraco negro)" Click="HideMenuItem_Click" />
                     <MenuItem Header="Testar notificação" Click="TestMenuItem_Click" />
+                    <MenuItem Header="Procurar atualizações" Click="UpdateMenuItem_Click" />
                     <Separator />
                     <MenuItem Header="Sair" Click="ExitMenuItem_Click" />
                 </ContextMenu>
@@ -561,9 +562,13 @@
                             <TextBlock Text="Relógio na ilha em repouso" Style="{StaticResource SettingLabel}" />
                             <CheckBox x:Name="ClockToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
                         </Grid>
-                        <Grid Margin="0,12,0,4">
+                        <Grid Margin="0,12,0,0">
                             <TextBlock Text="Iniciar com o Windows" Style="{StaticResource SettingLabel}" />
                             <CheckBox x:Name="StartupToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
+                        </Grid>
+                        <Grid Margin="0,12,0,4">
+                            <TextBlock x:Name="AutoUpdateLabel" Text="Atualizar automaticamente" Style="{StaticResource SettingLabel}" />
+                            <CheckBox x:Name="AutoUpdateToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
                         </Grid>
                     </StackPanel>
                 </Grid>

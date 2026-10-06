@@ -89,4 +89,7 @@ Write-Host 'Compiling the installer...'
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
 
 $setup = Join-Path $out "WindowsIsland-Setup-$version.exe"
+# The island's updater only runs installers signed by this same certificate (see Services\UpdateService.cs).
+& $signtool sign /q /fd SHA256 /f $pfx /p $password $setup
+if ($LASTEXITCODE -ne 0) { throw 'signtool failed (installer)' }
 Write-Host ("Done: {0} ({1:N1} MB)" -f $setup, ((Get-Item $setup).Length / 1MB)) -ForegroundColor Green

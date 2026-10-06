@@ -49,6 +49,12 @@ public sealed class IslandSettings
     /// <summary>Width of the pinned video in DIPs (its height follows 16:9).</summary>
     public double? PipWidth { get; set; }
 
+    /// <summary>Install new versions on its own (one administrator prompt). Off: just say one is ready.</summary>
+    public bool AutoUpdate { get; set; } = true;
+
+    /// <summary>The version that last ran, to say "updated to x" once after an update.</summary>
+    public string? LastVersion { get; set; }
+
     /// <summary>The gradient stops for the current choice; empty = classic hairline.</summary>
     public Color[] BorderColors()
     {

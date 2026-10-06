@@ -14,7 +14,7 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap uap3 uap10 desktop6 rescap">
 
-  <Identity Name="WindowsIsland" Publisher="CN=WindowsIsland" Version="0.6.0.0" ProcessorArchitecture="neutral" />
+  <Identity Name="WindowsIsland" Publisher="CN=WindowsIsland" Version="0.7.0.0" ProcessorArchitecture="neutral" />
 
   <Properties>
     <DisplayName>Windows Island</DisplayName>

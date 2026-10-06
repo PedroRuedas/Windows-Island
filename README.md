@@ -148,6 +148,20 @@ Como os apps de "notch" do Mac: **arraste arquivos ou pastas até a ilha** e ela
 - **Duplo clique** abre o arquivo. **✕** tira da prateleira, e **💬** manda o arquivo para o Claude.
 - Guarda até 12 itens, do mais recente para o mais antigo. Nada é copiado: a prateleira só lembra o caminho, em `%LOCALAPPDATA%\WindowsIsland\shelf.json`, e esquece arquivos que foram apagados ou movidos.
 
+## Atualização automática
+
+A ilha se mantém atualizada sozinha:
+
+1. Um minuto depois de abrir, e depois a cada 6 horas, ela consulta a última versão publicada aqui no GitHub.
+2. Se houver uma versão mais nova, ela baixa o instalador em segundo plano e **só segue se o instalador passar em duas conferências**:
+   - o SHA-256 bate com o que o GitHub publica para o arquivo;
+   - ele foi **assinado pelo mesmo certificado** do pacote instalado. Mesmo que alguém invadisse a conta do GitHub, não conseguiria distribuir um instalador falso sem a chave privada.
+3. A ilha avisa "Atualizando para a versão x", o Windows pede a confirmação de administrador, e depois de alguns segundos ela volta sozinha, já atualizada, mostrando o link das novidades.
+
+Se você recusar o aviso do Windows, ou desligar **Atualizar automaticamente** na engrenagem ⚙️, a ilha só mostra "Versão x pronta · clique para atualizar". O menu do botão direito também tem **Procurar atualizações**. Versões compiladas a partir do código, sem o instalador, não se atualizam.
+
+Para publicar uma versão: suba a `<Version>` no `.csproj`, rode o `installer\build.ps1` (ele assina o instalador com o certificado de `installer\.signing`) e crie a Release com o `WindowsIsland-Setup-<versão>.exe`.
+
 ## Conectando o Claude Code
 
 O consumo de tokens é lido sozinho dos históricos locais (`~/.claude/projects`). Para o status ao vivo das sessões, adicione estes hooks em `~/.claude/settings.json`. Eles mandam cada evento para a ilha em segundo plano (`async`), sem atrasar o Claude, e não fazem nada se a ilha estiver fechada:
@@ -254,6 +268,7 @@ src/WindowsIsland/
 │   ├── ClaudeService.cs        Sessões do Claude Code (hooks) + tokens e títulos (históricos locais)
 │   ├── ClaudeChatService.cs    "Pergunte ao Claude": roda `claude -p` com streaming e mantém a conversa (--resume)
 │   ├── ScreenCapture.cs        Print da janela em que você estava (PrintWindow) para anexar à pergunta
+│   ├── UpdateService.cs        Atualização automática: GitHub → SHA-256 + assinatura → instalador (com confirmação)
 │   ├── NotificationService.cs  Espelha as notificações do Windows (UserNotificationListener) + histórico
 │   ├── PackageRegistration.cs  Registra o pacote esparso que dá identidade ao exe
 │   ├── BatteryService.cs     GetSystemPowerStatus

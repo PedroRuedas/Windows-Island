@@ -81,6 +81,14 @@ Filename: "powershell.exe"; \
     Flags: runhidden
 Filename: "{app}\WindowsIsland.exe"; Description: "{cm:LaunchProgram,Windows Island}"; \
     Flags: nowait postinstall skipifsilent runasoriginaluser
+; 4. Updates started from the island (silent, /RELAUNCH=1): the island closed itself to be replaced; reopen it.
+Filename: "{app}\WindowsIsland.exe"; Flags: nowait runasoriginaluser; Check: ShouldRelaunch
+
+[Code]
+function ShouldRelaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM WindowsIsland.exe /F"; Flags: runhidden; RunOnceId: "StopIsland"
