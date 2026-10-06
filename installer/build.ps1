@@ -4,8 +4,9 @@
 # Steps: publish a self-contained single-file app -> pack the sparse package (makeappx) -> sign it with the
 # project's self-signed certificate (signtool) -> compile the Inno Setup script.
 #
-# The signing certificate is created on first run in installer\.signing (git-ignored). Keep that folder:
-# installs made from different certificates can't update each other's package registration.
+# The signing certificate is created on first run in installer\.signing (git-ignored). Keep that folder and copy it
+# to every machine that builds releases: a new certificate makes the installer replace the package registration
+# (instead of updating it), so users may have to allow notification access again.
 
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')

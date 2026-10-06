@@ -70,9 +70,15 @@ Filename: "{sys}\certutil.exe"; Parameters: "-f -addstore TrustedPeople ""{app}\
 ; 2. Register the sparse package for the user who ran setup: gives WindowsIsland.exe its identity,
 ;    which Windows requires before an app may read notifications (WhatsApp, Teams...).
 ;    A Developer Mode registration (from running a dev build) blocks a signed one (0x80073CFB): drop it first.
+;    If an older install was signed with another certificate and Windows refuses the update, replace the package.
+;    (Inno Setup: "{{" is a literal brace.)
 Filename: "powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-AppxPackage -Name WindowsIsland | Where-Object IsDevelopmentMode | Remove-AppxPackage; Add-AppxPackage -Path '{app}\package\WindowsIsland.msix' -ExternalLocation '{app}' -ForceUpdateFromAnyVersion"""; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$p = '{app}\package\WindowsIsland.msix'; Get-AppxPackage -Name WindowsIsland | Where-Object IsDevelopmentMode | Remove-AppxPackage; try {{ Add-AppxPackage -Path $p -ExternalLocation '{app}' -ForceUpdateFromAnyVersion -ErrorAction Stop } catch {{ Get-AppxPackage -Name WindowsIsland | Remove-AppxPackage; Add-AppxPackage -Path $p -ExternalLocation '{app}' }"""; \
     Flags: runhidden runasoriginaluser; StatusMsg: "{cm:RegisteringPackage}"
+; 3. Stop trusting certificates of older installs signed by a different key (only this one is in use now).
+Filename: "powershell.exe"; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object {{ $_.Subject -eq 'CN=WindowsIsland' -and $_.Thumbprint -ne '{#CertThumbprint}' } | Remove-Item"""; \
+    Flags: runhidden
 Filename: "{app}\WindowsIsland.exe"; Description: "{cm:LaunchProgram,Windows Island}"; \
     Flags: nowait postinstall skipifsilent runasoriginaluser
 
