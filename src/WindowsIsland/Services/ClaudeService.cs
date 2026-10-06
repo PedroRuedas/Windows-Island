@@ -24,9 +24,18 @@ public sealed class ClaudeSession
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
 
-public sealed record ClaudeUsage(long TodayTokens, long TodayOutputTokens, int TodayResponses, long Last5hTokens)
+public sealed record DayUsage(DateTime Date, long Tokens, int Responses);
+
+/// <summary>Token usage from local transcripts. <see cref="Daily"/> holds the last 7 days, oldest first, today last.</summary>
+public sealed record ClaudeUsage(IReadOnlyList<DayUsage> Daily, long TodayOutputTokens, long Last5hTokens)
 {
-    public static readonly ClaudeUsage Empty = new(0, 0, 0, 0);
+    public static readonly ClaudeUsage Empty = new(
+        Enumerable.Range(0, 7).Select(i => new DayUsage(DateTime.Today.AddDays(i - 6), 0, 0)).ToList(), 0, 0);
+
+    public long TodayTokens => Daily[^1].Tokens;
+    public int TodayResponses => Daily[^1].Responses;
+    public long WeekTokens => Daily.Sum(d => d.Tokens);
+    public int WeekResponses => Daily.Sum(d => d.Responses);
 }
 
 /// <summary>
@@ -297,7 +306,8 @@ public sealed partial class ClaudeService : IDisposable
     private ClaudeUsage Scan()
     {
         var now = DateTime.Now;
-        var horizon = now.AddHours(-26);
+        // A week of history for the daily/weekly view (plus a day of slack for time zones).
+        var horizon = now.Date.AddDays(-7);
         string root = ProjectsDirectory;
         if (!Directory.Exists(root))
             return ClaudeUsage.Empty;
@@ -321,20 +331,21 @@ public sealed partial class ClaudeService : IDisposable
 
         var today = now.Date;
         var last5h = now.AddHours(-5);
-        long todayTokens = 0, todayOutput = 0, recentTokens = 0;
-        int todayResponses = 0;
+        var daily = new DayUsage[7];
+        for (int i = 0; i < daily.Length; i++)
+            daily[i] = new DayUsage(today.AddDays(i - 6), 0, 0);
+        long recentTokens = 0, todayOutput = 0;
         foreach (var (at, total, output) in _responses.Values)
         {
+            int day = 6 - (int)(today - at.Date).TotalDays;
+            if (day is >= 0 and < 7)
+                daily[day] = daily[day] with { Tokens = daily[day].Tokens + total, Responses = daily[day].Responses + 1 };
             if (at.Date == today)
-            {
-                todayTokens += total;
                 todayOutput += output;
-                todayResponses++;
-            }
             if (at >= last5h)
                 recentTokens += total;
         }
-        return new ClaudeUsage(todayTokens, todayOutput, todayResponses, recentTokens);
+        return new ClaudeUsage(daily, todayOutput, recentTokens);
     }
 
     private void ReadAppended(string path, long length)

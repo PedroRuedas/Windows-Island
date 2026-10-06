@@ -14,7 +14,8 @@ A Dynamic Island do Mac/iPhone, só que para Windows. Uma pílula preta no topo 
 | **Relógio** | No modo ocioso. Ao passar o mouse, mostra hora e data |
 | **API de integração** | Notificações e atividades ao vivo (downloads, timers, builds…) enviadas por qualquer programa |
 | **Tela cheia** | A ilha se esconde em jogos, vídeos em tela cheia e apresentações |
-| **Claude Code** | Sessões por projeto ao vivo ("Editando Menu.tsx", "Executando: npm test", "Aguardando você"), tokens consumidos hoje e nas últimas 5h, alerta quando ele precisa de permissão e quando **termina**, com o começo da resposta |
+| **Claude Code** | Sessões por projeto ao vivo ("Editando Menu.tsx", "Executando: npm test", "Aguardando você"), **uso diário e semanal** (tokens e respostas de hoje, dos últimos 7 dias e das últimas 5h, com gráfico por dia), alerta quando ele precisa de permissão e quando **termina**, com o começo da resposta |
+| **Personalização** | Engrenagem ⚙️ na barra de abas: borda em degradê (presets como Apple Intelligence, Aurora e Pôr do sol, ou duas cores à sua escolha), espessura, degradê em movimento, brilho, relógio em repouso e iniciar com o Windows |
 
 ### Páginas: trocando entre apps
 
@@ -56,6 +57,18 @@ O registro aponta para a pasta de onde o exe rodou. Se você trocar de pasta (po
 > Para distribuir para outras pessoas sem o Modo de Desenvolvedor, é preciso assinar o pacote com um certificado.
 
 Por privacidade, o `GET /status` da API **não** expõe o conteúdo das notificações espelhadas.
+
+## Personalizando
+
+Passe o mouse na ilha e clique na **engrenagem**, no fim da barra de abas. A ilha continua preta, e só a borda muda:
+
+- **Borda:** "Clássica" (o contorno discreto de sempre), sete degradês prontos ou **Personalizada**, com cor inicial e final.
+- **Espessura:** fina, média ou grossa.
+- **Degradê em movimento:** as cores giram devagar em volta da ilha. Fica desligado por padrão, porque redesenhar a ilha continuamente custa um pouco de CPU.
+- **Brilho na borda:** um halo suave na cor do degradê.
+- **Relógio na ilha em repouso** e **Iniciar com o Windows**.
+
+Tudo é aplicado na hora e salvo em `%LOCALAPPDATA%\WindowsIsland\settings.json`.
 
 ## Vídeo do YouTube na ilha
 

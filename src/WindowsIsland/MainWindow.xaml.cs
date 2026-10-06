@@ -20,7 +20,10 @@ namespace WindowsIsland;
 
 public partial class MainWindow : Window
 {
-    private enum ViewKind { Idle, IdleExpanded, Compact, MediaExpanded, ActivityExpanded, ClaudeExpanded, NotificationsExpanded }
+    private enum ViewKind { Idle, IdleExpanded, Compact, MediaExpanded, ActivityExpanded, ClaudeExpanded, NotificationsExpanded, SettingsExpanded }
+
+    private const string SettingsKey = "settings";
+    private const string ClockKey = "clock";
 
     /// <summary>
     /// Something you can switch to in the expanded island (Spotify, Claude, notifications, an API activity).
@@ -40,6 +43,9 @@ public partial class MainWindow : Window
     private readonly BatteryService _battery;
     private readonly NotificationService _notifications;
     private readonly ClaudeService _claude;
+    private readonly IslandSettings _settings = IslandSettings.Load();
+    private bool _settingsBuilt;
+    private string? _usageSignature;
     private readonly YouTubeResolver _youtube = new();
     private readonly HashSet<string> _unembeddable = new();
     private YouTubeMirror? _mirror;
@@ -93,6 +99,7 @@ public partial class MainWindow : Window
             [ViewKind.ActivityExpanded] = ActivityView,
             [ViewKind.ClaudeExpanded] = ClaudeView,
             [ViewKind.NotificationsExpanded] = NotificationsView,
+            [ViewKind.SettingsExpanded] = SettingsView,
         };
         foreach (var view in _views.Values)
         {
@@ -102,6 +109,7 @@ public partial class MainWindow : Window
         }
 
         Stage.Clip = _clip;
+        ApplyAppearance();
         VideoHost.Clip = new RectangleGeometry(new Rect(0, 0, VideoHost.Width, VideoHost.Height), 18, 18);
         BuildEqualizer(CompactEqualizer, 16);
         BuildEqualizer(MediaEqualizer, 18);
@@ -129,6 +137,9 @@ public partial class MainWindow : Window
                 return;
             _leaveDelay.Stop();
             _hoverExpanded = false;
+            // Settings is a place you visit, not something the compact island should come back to.
+            if (_selectedKey == SettingsKey)
+                _selectedKey = null;
             Refresh();
         };
         _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); _peeking = false; Refresh(); };
@@ -241,7 +252,7 @@ public partial class MainWindow : Window
             pages.Add(new("media", ViewKind.MediaExpanded, Icons.Resolve("music"), media.Artwork, media.Accent, media.IsPlaying, 20));
 
         var sessions = _claude.Sessions;
-        if (sessions.Count > 0 || _claude.Usage.TodayResponses > 0)
+        if (sessions.Count > 0 || _claude.Usage.WeekResponses > 0)
         {
             bool waiting = sessions.Any(s => s.State == ClaudeSessionState.Waiting);
             bool working = sessions.Any(s => s.State == ClaudeSessionState.Working);
@@ -256,6 +267,14 @@ public partial class MainWindow : Window
         foreach (var activity in _controller.PersistentActivities)
             pages.Add(new($"activity:{activity.Id}", ViewKind.ActivityExpanded, Icons.Resolve(activity.Icon), activity.Image,
                 activity.Accent, true, activity.Priority, activity));
+
+        // While open, the tab bar always ends with the gear; with nothing else going on, the clock keeps it company.
+        if (_hoverExpanded)
+        {
+            if (pages.Count == 0)
+                pages.Add(new(ClockKey, ViewKind.IdleExpanded, Icons.Resolve("clock"), null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
+            pages.Add(new(SettingsKey, ViewKind.SettingsExpanded, "", null, Color.FromRgb(0xAE, 0xAE, 0xB2), false, -1));
+        }
 
         return pages;
     }
@@ -296,7 +315,7 @@ public partial class MainWindow : Window
             kind = ViewKind.Compact;
         else if (_hoverExpanded)
         {
-            page = FindPage(_selectedKey) ?? PickCompactPage() ?? _pages.FirstOrDefault();
+            page = FindPage(_selectedKey) ?? PickCompactPage() ?? _pages.FirstOrDefault(p => p.Key != SettingsKey);
             kind = page?.View ?? ViewKind.IdleExpanded;
         }
         else if (_peekingMedia && FindPage("media") is { } mediaPage)
@@ -428,6 +447,9 @@ public partial class MainWindow : Window
                 break;
             case ViewKind.ActivityExpanded when page.Activity is not null:
                 FillActivity(page.Activity);
+                break;
+            case ViewKind.SettingsExpanded:
+                FillSettings();
                 break;
         }
     }
@@ -618,8 +640,11 @@ public partial class MainWindow : Window
 
         var usage = _claude.Usage;
         UsageToday.Text = FormatTokens(usage.TodayTokens);
+        UsageTodaySub.Text = Responses(usage.TodayResponses);
+        UsageWeek.Text = FormatTokens(usage.WeekTokens);
+        UsageWeekSub.Text = Responses(usage.WeekResponses);
         UsageRecent.Text = FormatTokens(usage.Last5hTokens);
-        UsageResponses.Text = usage.TodayResponses.ToString("N0", Culture);
+        BuildUsageChart(usage);
 
         var now = DateTime.Now;
         var rows = sessions.Select(s => (Session: s, Time: SessionTime(s, now))).ToList();
@@ -886,7 +911,7 @@ public partial class MainWindow : Window
                 Opacity = restOpacity,
                 Cursor = Cursors.Hand,
                 Child = content,
-                ToolTip = page.Key switch { "media" => "Música", "claude" => "Claude Code", "notifications" => "Notificações", _ => page.Activity?.Title },
+                ToolTip = page.Key switch { "media" => "Música", "claude" => "Claude Code", "notifications" => "Notificações", SettingsKey => "Personalizar", ClockKey => "Relógio", _ => page.Activity?.Title },
             };
             tab.MouseEnter += (_, _) => tab.Opacity = 1;
             tab.MouseLeave += (_, _) => tab.Opacity = restOpacity;
@@ -930,6 +955,7 @@ public partial class MainWindow : Window
             ViewKind.MediaExpanded => (400.0, MeasureHeight(MediaView), 42.0),
             ViewKind.ClaudeExpanded => (400.0, MeasureHeight(ClaudeView), 36.0),
             ViewKind.NotificationsExpanded => (400.0, MeasureHeight(NotificationsView), 36.0),
+            ViewKind.SettingsExpanded => (400.0, MeasureHeight(SettingsView), 36.0),
             _ => (400.0, MeasureHeight(ActivityView), 34.0),
         };
         if (_pagerVisible)
@@ -1150,6 +1176,11 @@ public partial class MainWindow : Window
 
         if (_view == ViewKind.MediaExpanded && _controller.Media is { } media)
             UpdateMediaTimeline(media);
+
+        // Mouse-leave is not always delivered to a no-activate window (e.g. right after clicking a control
+        // that captured the mouse). Self-heal: if the cursor is gone, start the normal collapse.
+        if (_hoverExpanded && !_leaveDelay.IsEnabled && !IsCursorOverIsland())
+            _leaveDelay.Start();
 
         // Once a second: elapsed timers ("2:31"), "há 3 min" labels, stale Claude sessions.
         if (_tickCount % 2 == 0 && IsVisible)
@@ -1386,6 +1417,283 @@ public partial class MainWindow : Window
     });
 
     private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => Close();
+
+    // ───────────────────────────── Claude usage chart ─────────────────────────────
+
+    private static string Responses(int count) => count == 1 ? "1 resposta" : $"{count.ToString("N0", Culture)} respostas";
+
+    /// <summary>
+    /// Tokens per day for the last 7 days: one hue (Claude orange), today at full strength, earlier days softer,
+    /// top-rounded bars on a shared baseline, exact values in each column's tooltip.
+    /// </summary>
+    private void BuildUsageChart(ClaudeUsage usage)
+    {
+        string signature = string.Join("|", usage.Daily.Select(d => $"{d.Date:yyyyMMdd}:{d.Tokens}"));
+        if (signature == _usageSignature)
+            return;
+        _usageSignature = signature;
+
+        const double maxBar = 40;
+        long peak = Math.Max(1, usage.Daily.Max(d => d.Tokens));
+        var accent = ClaudeService.Orange;
+
+        UsageChart.Children.Clear();
+        UsageChart.ColumnDefinitions.Clear();
+        for (int i = 0; i < usage.Daily.Count; i++)
+        {
+            var day = usage.Daily[i];
+            bool isToday = i == usage.Daily.Count - 1;
+            UsageChart.ColumnDefinitions.Add(new ColumnDefinition());
+
+            double height = day.Tokens == 0 ? 2 : Math.Max(4, maxBar * day.Tokens / peak);
+            var bar = new Border
+            {
+                Width = 26,
+                Height = height,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                CornerRadius = new CornerRadius(4, 4, 0, 0),
+                Background = day.Tokens == 0
+                    ? new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF))
+                    : new SolidColorBrush(isToday ? accent : Color.FromArgb(0xA6, accent.R, accent.G, accent.B)),
+            };
+            string dayName = Culture.DateTimeFormat.GetAbbreviatedDayName(day.Date.DayOfWeek).TrimEnd('.');
+            var label = new TextBlock
+            {
+                Text = isToday ? "hoje" : dayName,
+                FontSize = 10.5,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 4, 0, 0),
+                Foreground = isToday ? Brushes.White : (Brush)FindResource("FaintText"),
+                FontWeight = isToday ? FontWeights.SemiBold : FontWeights.Normal,
+            };
+
+            // The whole column is the hover target, not just the (possibly tiny) bar.
+            var column = new Grid
+            {
+                Background = Brushes.Transparent,
+                ToolTip = $"{Culture.TextInfo.ToTitleCase(day.Date.ToString("dddd, d/MM", Culture))}\n{FormatTokens(day.Tokens)} tokens · {Responses(day.Responses)}",
+            };
+            column.RowDefinitions.Add(new RowDefinition { Height = new GridLength(maxBar) });
+            column.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(label, 1);
+            column.Children.Add(bar);
+            column.Children.Add(label);
+            Grid.SetColumn(column, i);
+            UsageChart.Children.Add(column);
+        }
+    }
+
+    // ───────────────────────────── Appearance & settings ─────────────────────────────
+
+    /// <summary>Paints the rim (gradient border, thickness, glow, motion) and applies the other visual settings.</summary>
+    private void ApplyAppearance()
+    {
+        var colors = _settings.BorderColors();
+        Brush brush;
+        double thickness;
+        if (colors.Length == 0)
+        {
+            // Classic: the barely-there hairline.
+            brush = new SolidColorBrush(Color.FromArgb(0x17, 0xFF, 0xFF, 0xFF));
+            thickness = 1;
+        }
+        else
+        {
+            var gradient = new LinearGradientBrush { StartPoint = new Point(0, 0.5), EndPoint = new Point(1, 0.5) };
+            // Repeat the first color at the end so the loop is seamless when the gradient rotates.
+            Color[] stops = colors.Length == 1 ? [colors[0], colors[0]] : [.. colors, colors[0]];
+            for (int i = 0; i < stops.Length; i++)
+                gradient.GradientStops.Add(new GradientStop(stops[i], (double)i / (stops.Length - 1)));
+
+            var spin = new RotateTransform(0, 0.5, 0.5);
+            gradient.RelativeTransform = spin;
+            if (_settings.AnimateBorder)
+            {
+                var turn = new DoubleAnimation(0, 360, TimeSpan.FromSeconds(7)) { RepeatBehavior = RepeatBehavior.Forever };
+                // The island is a layered window, so every frame is a full repaint: 30 fps is plenty for a slow spin.
+                Timeline.SetDesiredFrameRate(turn, 30);
+                spin.BeginAnimation(RotateTransform.AngleProperty, turn);
+            }
+            brush = gradient;
+            thickness = _settings.BorderThickness;
+        }
+
+        IslandRim.BorderBrush = BubbleRim.BorderBrush = brush;
+        IslandRim.BorderThickness = BubbleRim.BorderThickness = new Thickness(thickness);
+        IslandRim.Effect = colors.Length > 0 && _settings.Glow
+            ? new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = colors[colors.Length / 2],
+                BlurRadius = 18,
+                ShadowDepth = 0,
+                Opacity = 0.75,
+                RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance,
+            }
+            : null;
+
+        IdleClock.Visibility = _settings.ShowIdleClock ? Visibility.Visible : Visibility.Hidden;
+    }
+
+    private void FillSettings()
+    {
+        if (_settingsBuilt)
+            return;
+        _settingsBuilt = true;
+
+        var preset = IslandSettings.Presets.FirstOrDefault(p => p.Id == _settings.Border);
+        BorderName.Text = _settings.Border == IslandSettings.Custom ? "Personalizada" : preset?.Name ?? "";
+
+        PresetSwatches.Children.Clear();
+        foreach (var option in IslandSettings.Presets)
+            PresetSwatches.Children.Add(Swatch(option.Colors.Select(IslandSettings.ParseColor).ToArray(), option.Name,
+                _settings.Border == option.Id, () => ChangeSettings(s => s.Border = option.Id), size: 30));
+        PresetSwatches.Children.Add(Swatch(_settings.CustomColors.Select(IslandSettings.ParseColor).ToArray(), "Personalizada",
+            _settings.Border == IslandSettings.Custom, () => ChangeSettings(s => s.Border = IslandSettings.Custom), size: 30, edit: true));
+
+        bool custom = _settings.Border == IslandSettings.Custom;
+        CustomColorsPanel.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+        if (custom)
+        {
+            FillPalette(CustomColor1, 0);
+            FillPalette(CustomColor2, 1);
+        }
+
+        (_settings.BorderThickness switch { <= 1 => ThinBorder, >= 3 => ThickBorder, _ => MediumBorder }).IsChecked = true;
+        AnimateToggle.IsChecked = _settings.AnimateBorder;
+        GlowToggle.IsChecked = _settings.Glow;
+        ClockToggle.IsChecked = _settings.ShowIdleClock;
+        StartupToggle.IsChecked = StartupRegistration.IsEnabled;
+
+        // Border options mean nothing for the classic hairline.
+        bool hasGradient = _settings.Border != IslandSettings.NoBorder;
+        foreach (var control in new UIElement[] { ThinBorder, MediumBorder, ThickBorder, AnimateToggle, GlowToggle })
+        {
+            control.IsEnabled = hasGradient;
+            control.Opacity = hasGradient ? 1 : 0.35;
+        }
+    }
+
+    private void FillPalette(Panel host, int index)
+    {
+        host.Children.Clear();
+        foreach (string hex in IslandSettings.Palette)
+        {
+            string color = hex;
+            host.Children.Add(Swatch([IslandSettings.ParseColor(hex)], hex,
+                string.Equals(_settings.CustomColors[index], hex, StringComparison.OrdinalIgnoreCase),
+                () => ChangeSettings(s => s.CustomColors[index] = color), size: 22));
+        }
+    }
+
+    /// <summary>A round color chip (gradient when several colors) with a white ring when selected.</summary>
+    private Border Swatch(Color[] colors, string name, bool selected, Action pick, double size, bool edit = false)
+    {
+        Brush fill;
+        if (colors.Length == 0)
+        {
+            fill = Brushes.Black;
+        }
+        else if (colors.Length == 1)
+        {
+            fill = new SolidColorBrush(colors[0]);
+        }
+        else
+        {
+            var gradient = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1) };
+            for (int i = 0; i < colors.Length; i++)
+                gradient.GradientStops.Add(new GradientStop(colors[i], (double)i / (colors.Length - 1)));
+            fill = gradient;
+        }
+
+        var chip = new Border
+        {
+            Width = size - 8,
+            Height = size - 8,
+            CornerRadius = new CornerRadius((size - 8) / 2),
+            Background = fill,
+            // The classic swatch is black-on-black: outline it so it's visible.
+            BorderBrush = colors.Length == 0 ? new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF)) : null,
+            BorderThickness = new Thickness(colors.Length == 0 ? 1 : 0),
+        };
+        if (edit)
+        {
+            chip.Child = new TextBlock
+            {
+                Text = "",
+                FontFamily = (FontFamily)FindResource("IconFont"),
+                FontSize = 10,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+        }
+
+        var ring = new Border
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            Margin = new Thickness(0, 0, 6, 4),
+            BorderThickness = new Thickness(2),
+            BorderBrush = selected ? Brushes.White : Brushes.Transparent,
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            ToolTip = name,
+            Child = chip,
+        };
+        ring.MouseEnter += (_, _) => { if (!selected) ring.BorderBrush = new SolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF)); };
+        ring.MouseLeave += (_, _) => { if (!selected) ring.BorderBrush = Brushes.Transparent; };
+        ring.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            pick();
+        };
+        return ring;
+    }
+
+    private void ChangeSettings(Action<IslandSettings> change)
+    {
+        change(_settings);
+        _settings.Save();
+        ApplyAppearance();
+        _settingsBuilt = false; // Rebuild the page so selections and the custom-color panel follow.
+        Refresh();
+    }
+
+    private void Thickness_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_settingsBuilt || sender is not RadioButton { Tag: string tag } || !double.TryParse(tag, CultureInfo.InvariantCulture, out double value))
+            return;
+        if (Math.Abs(_settings.BorderThickness - value) > 0.01)
+            ChangeSettings(s => s.BorderThickness = value);
+    }
+
+    private void SettingToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool on = sender is CheckBox { IsChecked: true };
+        if (sender == StartupToggle)
+        {
+            try
+            {
+                StartupRegistration.Set(on);
+            }
+            catch (Exception ex)
+            {
+                App.Log(ex);
+                StartupToggle.IsChecked = StartupRegistration.IsEnabled;
+            }
+            return;
+        }
+        ChangeSettings(s =>
+        {
+            if (sender == AnimateToggle)
+                s.AnimateBorder = on;
+            else if (sender == GlowToggle)
+                s.Glow = on;
+            else if (sender == ClockToggle)
+                s.ShowIdleClock = on;
+        });
+    }
 
     // ───────────────────────────── Formatting ─────────────────────────────
 

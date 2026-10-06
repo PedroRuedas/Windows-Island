@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:WindowsIsland.Controls"
-        Title="Windows Island" Width="560" Height="480"
+        Title="Windows Island" Width="560" Height="540"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize" ShowActivated="False"
         FontFamily="Segoe UI Variable Text, Segoe UI" UseLayoutRounding="True"
@@ -78,6 +78,67 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- iOS-style switch. -->
+        <Style x:Key="ToggleSwitch" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Track" Width="40" Height="24" CornerRadius="12" Background="#3A3A3C">
+                            <Ellipse x:Name="Knob" Width="20" Height="20" Fill="White" HorizontalAlignment="Left" Margin="2,0" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="#30D158" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One option of an iOS-style segmented control. -->
+        <Style x:Key="Segment" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource DimText}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bg" CornerRadius="7" Padding="12,4" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#48484A" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource FaintText}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,14,0,8" />
         </Style>
 
         <!-- Clickable list row (Claude sessions, notifications). -->
@@ -284,6 +345,7 @@
 
                         <Border Height="1" Background="#1AFFFFFF" Margin="0,8,0,10" />
 
+                        <!-- Usage from the local transcripts: today, the last 7 days and the last 5 hours. -->
                         <Grid x:Name="ClaudeUsageRow">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -291,21 +353,26 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <StackPanel>
-                                <TextBlock Text="Tokens hoje" Foreground="{StaticResource FaintText}" FontSize="11" FontWeight="SemiBold" />
+                                <TextBlock Text="Hoje" Foreground="{StaticResource FaintText}" FontSize="11" FontWeight="SemiBold" />
                                 <TextBlock x:Name="UsageToday" Foreground="White" FontSize="18" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" Margin="0,1,0,0" />
+                                <TextBlock x:Name="UsageTodaySub" Foreground="{StaticResource FaintText}" FontSize="11" />
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Últimas 5h" Foreground="{StaticResource FaintText}" FontSize="11" FontWeight="SemiBold" />
-                                <TextBlock x:Name="UsageRecent" Foreground="White" FontSize="18" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" Margin="0,1,0,0" />
+                                <TextBlock Text="Últimos 7 dias" Foreground="{StaticResource FaintText}" FontSize="11" FontWeight="SemiBold" />
+                                <TextBlock x:Name="UsageWeek" Foreground="White" FontSize="18" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" Margin="0,1,0,0" />
+                                <TextBlock x:Name="UsageWeekSub" Foreground="{StaticResource FaintText}" FontSize="11" />
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="Respostas hoje" Foreground="{StaticResource FaintText}" FontSize="11" FontWeight="SemiBold" />
-                                <TextBlock x:Name="UsageResponses" Foreground="White" FontSize="18" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" Margin="0,1,0,0" />
+                                <TextBlock Text="Últimas 5h" Foreground="{StaticResource FaintText}" FontSize="11" FontWeight="SemiBold" />
+                                <TextBlock x:Name="UsageRecent" Foreground="White" FontSize="18" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" Margin="0,1,0,0" />
+                                <TextBlock Text="tokens" Foreground="{StaticResource FaintText}" FontSize="11" />
                             </StackPanel>
                         </Grid>
+
+                        <!-- Tokens per day, one bar per day (built in code). -->
+                        <Grid x:Name="UsageChart" Height="62" Margin="0,12,0,0" />
                     </StackPanel>
                 </Grid>
-
                 <!-- NOTIFICATIONS: recent history (WhatsApp, Teams...) -->
                 <Grid x:Name="NotificationsView" Width="400" Opacity="0" IsHitTestVisible="False">
                     <StackPanel Margin="22,16,22,10">
@@ -317,8 +384,60 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Page tabs at the bottom of the expanded island: switch between apps -->
-                <StackPanel x:Name="PagerBar" Orientation="Horizontal" Height="30" Opacity="0" IsHitTestVisible="False" />
+                <!-- SETTINGS: opened from the gear in the tab bar -->
+                <Grid x:Name="SettingsView" Width="400" Opacity="0" IsHitTestVisible="False">
+                    <StackPanel Margin="22,18,22,10">
+                        <Grid>
+                            <TextBlock Text="Personalizar" Foreground="White" FontSize="15.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="BorderName" Foreground="{StaticResource DimText}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <TextBlock Text="BORDA" Style="{StaticResource SectionLabel}" />
+                        <WrapPanel x:Name="PresetSwatches" />
+
+                        <StackPanel x:Name="CustomColorsPanel" Margin="0,10,0,0" Visibility="Collapsed">
+                            <Grid Margin="0,0,0,6">
+                                <TextBlock Text="Cor inicial" Style="{StaticResource SettingLabel}" Foreground="{StaticResource DimText}" FontSize="12" />
+                                <WrapPanel x:Name="CustomColor1" HorizontalAlignment="Right" />
+                            </Grid>
+                            <Grid>
+                                <TextBlock Text="Cor final" Style="{StaticResource SettingLabel}" Foreground="{StaticResource DimText}" FontSize="12" />
+                                <WrapPanel x:Name="CustomColor2" HorizontalAlignment="Right" />
+                            </Grid>
+                        </StackPanel>
+
+                        <Grid Margin="0,14,0,0">
+                            <TextBlock Text="Espessura" Style="{StaticResource SettingLabel}" />
+                            <Border Background="#1C1C1E" CornerRadius="9" Padding="2" HorizontalAlignment="Right">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton x:Name="ThinBorder" Style="{StaticResource Segment}" GroupName="Thickness" Content="Fina" Tag="1" Checked="Thickness_Checked" />
+                                    <RadioButton x:Name="MediumBorder" Style="{StaticResource Segment}" GroupName="Thickness" Content="Média" Tag="2" Checked="Thickness_Checked" />
+                                    <RadioButton x:Name="ThickBorder" Style="{StaticResource Segment}" GroupName="Thickness" Content="Grossa" Tag="3" Checked="Thickness_Checked" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <Grid Margin="0,12,0,0">
+                            <TextBlock Text="Degradê em movimento" Style="{StaticResource SettingLabel}" />
+                            <CheckBox x:Name="AnimateToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
+                        </Grid>
+                        <Grid Margin="0,12,0,0">
+                            <TextBlock Text="Brilho na borda" Style="{StaticResource SettingLabel}" />
+                            <CheckBox x:Name="GlowToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
+                        </Grid>
+
+                        <TextBlock Text="ILHA" Style="{StaticResource SectionLabel}" Margin="0,18,0,4" />
+                        <Grid Margin="0,8,0,0">
+                            <TextBlock Text="Relógio na ilha em repouso" Style="{StaticResource SettingLabel}" />
+                            <CheckBox x:Name="ClockToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
+                        </Grid>
+                        <Grid Margin="0,12,0,4">
+                            <TextBlock Text="Iniciar com o Windows" Style="{StaticResource SettingLabel}" />
+                            <CheckBox x:Name="StartupToggle" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right" Click="SettingToggle_Click" />
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Page tabs at the bottom of the expanded island: switch between apps -->                <StackPanel x:Name="PagerBar" Orientation="Horizontal" Height="30" Opacity="0" IsHitTestVisible="False" />
             </Canvas>
         </Border>
 
@@ -348,7 +467,7 @@
                     </TextBlock.RenderTransform>
                 </TextBlock>
             </Border>
-                <Border CornerRadius="17" BorderThickness="1" BorderBrush="#17FFFFFF" IsHitTestVisible="False" />
+                <Border x:Name="BubbleRim" CornerRadius="17" BorderThickness="1" BorderBrush="#17FFFFFF" IsHitTestVisible="False" />
             </Grid>
         </Border>
     </Grid>
