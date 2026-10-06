@@ -96,6 +96,10 @@ public sealed class ApiServer : IDisposable
                 var (status, payload) = Route(request);
                 await WriteAsync(stream, status, payload);
             }
+            catch (ObjectDisposedException)
+            {
+                // A request arrived while the island was closing (e.g. during an update): nothing to answer.
+            }
             catch (Exception ex)
             {
                 App.Log(ex);

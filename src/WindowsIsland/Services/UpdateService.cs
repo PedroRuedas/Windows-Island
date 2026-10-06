@@ -53,6 +53,10 @@ public sealed class UpdateService
     {
         if (!IsInstalledBuild)
             return;
+        // Installers from earlier updates (or abandoned offers) aren't needed anymore; a newer one is fetched again.
+        if (Directory.Exists(Folder))
+            foreach (var old in Directory.EnumerateFiles(Folder, "WindowsIsland-Setup-*.exe"))
+                TryDelete(old);
         _ = LoopAsync();
     }
 
