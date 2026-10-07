@@ -32,6 +32,7 @@ public static class Icons
         ["location"] = "",
         ["wifi"] = "",
         ["bluetooth"] = "",
+        ["headphones"] = "",
         ["folder"] = "",
         ["play"] = "",
         ["pause"] = "",

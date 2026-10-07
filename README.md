@@ -11,6 +11,7 @@ A Dynamic Island do Mac/iPhone, só que para Windows. Uma pílula preta no topo 
 | **Notificações do Windows**: WhatsApp, Teams, Outlook, Discord… | Cada notificação nova aparece expandida com o ícone e o nome do app, o título e o texto. Dispensar no Central de Notificações também tira da ilha |
 | **Volume** | Ao mudar o volume, a ilha vira uma barra de nível (acompanha a troca de dispositivo de saída) |
 | **Bateria** | Avisos de carregador conectado/desconectado e de bateria fraca (20%, 10%, 5%) |
+| **Fone Bluetooth** | Ao conectar fones, fones de ouvido sem fio ou caixas de som Bluetooth, a ilha se abre com o nome e a **bateria** do aparelho (como os AirPods no iPhone). Também avisa quando ele desconecta e quando a bateria dele fica fraca (20%, 10%). A bateria aparece nos aparelhos que a informam ao Windows (os que mostram a porcentagem em Configurações → Bluetooth) |
 | **Relógio** | No modo ocioso. Ao passar o mouse, mostra hora e data |
 | **API de integração** | Notificações e atividades ao vivo (downloads, timers, builds…) enviadas por qualquer programa |
 | **Tela cheia** | A ilha se esconde em jogos, vídeos em tela cheia e apresentações |
@@ -69,6 +70,14 @@ Para gerar um executável:
 dotnet publish src/WindowsIsland -c Release -r win-x64 --self-contained false -o publish
 .\publish\WindowsIsland.exe
 ```
+
+Testes (atualização automática, Bluetooth, ícones):
+
+```powershell
+dotnet test WindowsIsland.slnx
+```
+
+A cada push e pull request, o GitHub Actions ([build.yml](.github/workflows/build.yml)) compila (avisos contam como erro) e roda os testes. Uma vez por mês, o Dependabot abre pull requests com pacotes NuGet e actions desatualizados.
 
 ## Ativando as notificações do Windows
 
@@ -160,7 +169,14 @@ A ilha se mantém atualizada sozinha:
 
 Se você recusar o aviso do Windows, ou desligar **Atualizar automaticamente** na engrenagem ⚙️, a ilha só mostra "Versão x pronta · clique para atualizar". O menu do botão direito também tem **Procurar atualizações**. Versões compiladas a partir do código, sem o instalador, não se atualizam.
 
-Para publicar uma versão: suba a `<Version>` no `.csproj`, rode o `installer\build.ps1` (ele assina o instalador com o certificado de `installer\.signing`) e crie a Release com o `WindowsIsland-Setup-<versão>.exe`.
+Para publicar uma versão, de qualquer computador: suba a `<Version>` no `.csproj`, faça commit e push, e envie uma tag com o mesmo número:
+
+```powershell
+git tag -a v0.8.0 -m "## Windows Island 0.8.0 ..."   # a mensagem da tag vira o texto da Release
+git push origin v0.8.0
+```
+
+O GitHub Actions ([release.yml](.github/workflows/release.yml)) roda os testes, compila, assina o instalador com o certificado guardado nos *secrets* do repositório (`SIGNING_PFX_BASE64` e `SIGNING_PASSWORD`) e cria a Release. Por isso não é preciso ter a pasta `installer\.signing` na máquina.
 
 ## Conectando o Claude Code
 
@@ -252,7 +268,9 @@ await notify({ title: "Testes passaram", icon: "check", color: "#30D158" });
 
 ```
 src/WindowsIsland/
-├── MainWindow.xaml(.cs)      A ilha: janela transparente, views e animação de mola
+├── MainWindow.xaml(.cs)      A ilha: janela transparente, páginas e qual view mostrar
+├── MainWindow.*.cs           O resto da ilha, dividido por assunto: Views (preencher cada página), Animation,
+│                             Events, Ask, Shelf, Video, Settings, Updates, BlackHole
 ├── VideoPipWindow.xaml(.cs)  Vídeo fixado: janelinha arrastável com ímã nas bordas, redimensionável, controles no hover
 ├── Core/
 │   ├── IslandController.cs   Fila de atividades por prioridade + expiração + mídia
@@ -272,6 +290,7 @@ src/WindowsIsland/
 │   ├── NotificationService.cs  Espelha as notificações do Windows (UserNotificationListener) + histórico
 │   ├── PackageRegistration.cs  Registra o pacote esparso que dá identidade ao exe
 │   ├── BatteryService.cs     GetSystemPowerStatus
+│   ├── BluetoothService.cs   Fones Bluetooth: conexão (DeviceWatcher) + bateria (propriedade do nó Hands-Free)
 │   └── ApiServer.cs          HTTP em 127.0.0.1 (TcpListener, sem precisar de admin)
 └── Interop/NativeMethods.cs  Janela sem foco/fora do Alt+Tab, detecção de tela cheia
 ```
@@ -283,7 +302,7 @@ Logs de erro ficam em `%LOCALAPPDATA%\WindowsIsland\log.txt`.
 - Responder e executar ações das notificações direto na ilha
 - Lista de apps silenciados / respeitar o modo Não Incomodar
 - Limites do plano do Claude (janela de 5h/semanal) em vez de só tokens
-- Brilho da tela, Bluetooth (fone conectado + bateria), microfone/câmera em uso
+- Brilho da tela, microfone/câmera em uso
 - Cor de destaque extraída da capa do álbum
 - Tela de configurações (posição, monitor, tamanho, tema)
 - Suporte a múltiplos monitores

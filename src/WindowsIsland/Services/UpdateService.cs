@@ -78,26 +78,13 @@ public sealed class UpdateService
         try
         {
             using var doc = JsonDocument.Parse(await _http.GetStringAsync($"https://api.github.com/repos/{Repo}/releases/latest"));
-            var release = doc.RootElement;
-            if (!Version.TryParse(release.GetProperty("tag_name").GetString()?.TrimStart('v'), out var latest) || latest <= CurrentVersion)
-                return null;
-
-            var asset = release.GetProperty("assets").EnumerateArray()
-                .FirstOrDefault(a => a.GetProperty("name").GetString() is { } name && name.StartsWith("WindowsIsland-Setup-") && name.EndsWith(".exe"));
-            if (asset.ValueKind != JsonValueKind.Object
-                || asset.TryGetProperty("digest", out var digest) is false
-                || digest.GetString() is not { } digestText || !digestText.StartsWith("sha256:"))
+            if (ParseRelease(doc.RootElement, CurrentVersion, out string? skipped) is not { } offer)
             {
-                App.Log($"Atualização {latest}: instalador sem SHA-256 publicado, ignorada.");
+                if (skipped is not null)
+                    App.Log(skipped);
                 return null;
             }
-            string expectedHash = digestText["sha256:".Length..];
-            string url = asset.GetProperty("browser_download_url").GetString() ?? "";
-            if (!url.StartsWith($"https://github.com/{Repo}/releases/download/", StringComparison.Ordinal))
-            {
-                App.Log($"Atualização {latest}: endereço inesperado ({url}), ignorada.");
-                return null;
-            }
+            var (latest, url, expectedHash, releaseUrl) = offer;
 
             Directory.CreateDirectory(Folder);
             foreach (var old in Directory.EnumerateFiles(Folder, "WindowsIsland-Setup-*.exe"))
@@ -107,14 +94,14 @@ public sealed class UpdateService
             await using (var target = File.Create(path))
                 await source.CopyToAsync(target);
 
-            if (!Verify(path, expectedHash, out string problem))
+            if (!Verify(path, expectedHash, PinnedCertificate, out string problem))
             {
                 App.Log($"Atualização {latest} descartada: {problem}");
                 TryDelete(path);
                 return null;
             }
 
-            var update = new PendingUpdate(latest, path, expectedHash, release.GetProperty("html_url").GetString() ?? $"https://github.com/{Repo}/releases");
+            var update = new PendingUpdate(latest, path, expectedHash, releaseUrl);
             UpdateReady?.Invoke(update);
             return update;
         }
@@ -130,12 +117,44 @@ public sealed class UpdateService
         }
     }
 
+    /// <summary>What a newer release offers: its version, the installer's address and published SHA-256, and its page.</summary>
+    internal sealed record ReleaseOffer(Version Version, string InstallerUrl, string Sha256, string ReleaseUrl);
+
+    /// <summary>
+    /// Reads GitHub's "latest release" JSON. Returns null when it is not newer than <paramref name="current"/> (then
+    /// <paramref name="problem"/> is null) or when it can't be trusted (then <paramref name="problem"/> says why).
+    /// </summary>
+    internal static ReleaseOffer? ParseRelease(JsonElement release, Version current, out string? problem)
+    {
+        problem = null;
+        if (!Version.TryParse(release.GetProperty("tag_name").GetString()?.TrimStart('v'), out var latest) || latest <= current)
+            return null;
+
+        var asset = release.GetProperty("assets").EnumerateArray()
+            .FirstOrDefault(a => a.GetProperty("name").GetString() is { } name && name.StartsWith("WindowsIsland-Setup-") && name.EndsWith(".exe"));
+        if (asset.ValueKind != JsonValueKind.Object
+            || asset.TryGetProperty("digest", out var digest) is false
+            || digest.GetString() is not { } digestText || !digestText.StartsWith("sha256:"))
+        {
+            problem = $"Atualização {latest}: instalador sem SHA-256 publicado, ignorada.";
+            return null;
+        }
+        string url = asset.GetProperty("browser_download_url").GetString() ?? "";
+        if (!url.StartsWith($"https://github.com/{Repo}/releases/download/", StringComparison.Ordinal))
+        {
+            problem = $"Atualização {latest}: endereço inesperado ({url}), ignorada.";
+            return null;
+        }
+        string releaseUrl = release.TryGetProperty("html_url", out var html) && html.GetString() is { } page ? page : $"https://github.com/{Repo}/releases";
+        return new ReleaseOffer(latest, url, digestText["sha256:".Length..], releaseUrl);
+    }
+
     /// <summary>Re-checks the file right before running it (it sits in a user-writable folder) and starts the installer.</summary>
     public static InstallResult Install(PendingUpdate update)
     {
         if (!File.Exists(update.InstallerPath))
             return InstallResult.Failed;
-        if (!Verify(update.InstallerPath, update.Sha256, out string problem))
+        if (!Verify(update.InstallerPath, update.Sha256, PinnedCertificate, out string problem))
         {
             App.Log($"Atualização {update.Version} não instalada: {problem}");
             TryDelete(update.InstallerPath);
@@ -163,7 +182,7 @@ public sealed class UpdateService
 
     public enum InstallResult { Started, Declined, Failed }
 
-    private static bool Verify(string path, string expectedHash, out string problem)
+    internal static bool Verify(string path, string expectedHash, string pinnedCertificate, out string problem)
     {
         using (var stream = File.OpenRead(path))
         {
@@ -189,7 +208,7 @@ public sealed class UpdateService
         {
 #pragma warning disable SYSLIB0057 // CreateFromSignedFile is the documented way to read an Authenticode signer.
             using var signer = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
-            using var pinned = new X509Certificate2(PinnedCertificate);
+            using var pinned = new X509Certificate2(pinnedCertificate);
 #pragma warning restore SYSLIB0057
             if (!signer.Thumbprint.Equals(pinned.Thumbprint, StringComparison.OrdinalIgnoreCase))
             {

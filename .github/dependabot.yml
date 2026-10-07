@@ -1,0 +1,11 @@
+# Monthly pull requests for outdated NuGet packages and GitHub Actions (the Build workflow tests each one).
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

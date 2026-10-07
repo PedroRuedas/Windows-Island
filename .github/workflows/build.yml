@@ -1,0 +1,25 @@
+# Builds and tests every push and pull request, so a broken build is caught here instead of in a release that
+# installs itself on every machine.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build WindowsIsland.slnx -c Release -warnaserror
+
+      - name: Test
+        run: dotnet test WindowsIsland.slnx -c Release --no-build
