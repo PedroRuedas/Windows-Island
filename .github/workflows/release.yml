@@ -1,0 +1,77 @@
+# Publishes a release when a version tag is pushed:
+#   git tag -a v0.7.2 -m "## Windows Island 0.7.2 ..."   (the tag message becomes the release notes)
+#   git push origin v0.7.2
+#
+# The signing certificate lives only in the repository secrets SIGNING_PFX_BASE64 and SIGNING_PASSWORD, so any machine
+# can publish a version without having installer\.signing. Installed islands only accept updates signed by it.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Check that the tag matches the project version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content src\WindowsIsland\WindowsIsland.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "Tag $env:GITHUB_REF_NAME does not match <Version>$version</Version> in WindowsIsland.csproj" }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Restore the signing certificate
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:SIGNING_PFX_BASE64) { throw 'Missing secret SIGNING_PFX_BASE64' }
+          $signing = New-Item -ItemType Directory -Force installer\.signing
+          $pfx = Join-Path $signing 'WindowsIsland.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+          Set-Content (Join-Path $signing 'password.txt') $env:SIGNING_PASSWORD -NoNewline
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $pfx, $env:SIGNING_PASSWORD
+          [IO.File]::WriteAllBytes((Join-Path $signing 'WindowsIsland.cer'), $cert.Export('Cert'))
+          Write-Host "Signing with $($cert.Subject) $($cert.Thumbprint)"
+
+      - name: Build the installer
+        shell: pwsh
+        run: .\installer\build.ps1
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = "installer\out\WindowsIsland-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          # checkout turns annotated tags into lightweight ones; fetch the real tag to read its message (UTF-8).
+          git fetch --force origin "refs/tags/${env:GITHUB_REF_NAME}:refs/tags/${env:GITHUB_REF_NAME}"
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          $notes = git tag -l --format='%(contents)' $env:GITHUB_REF_NAME | Out-String
+          if (-not $notes.Trim()) { $notes = "## Windows Island $env:VERSION`n" }
+          $notes = $notes.TrimEnd() + "`n`nSHA-256 do instalador: ``$hash``"
+          Set-Content release-notes.md $notes -Encoding utf8
+          gh release create $env:GITHUB_REF_NAME $setup --title "Windows Island $env:VERSION" --notes-file release-notes.md
+
+      - name: Remove the signing certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item installer\.signing -Recurse -Force -ErrorAction SilentlyContinue
